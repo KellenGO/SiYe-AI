@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+node_modules/
+webui/dist/
+build/
+dist/
+agent_runtime/
+.pytest_cache/
+.tmp_*/
