@@ -36,6 +36,11 @@ def main():
     with target.open("rb") as source:
         digest=hashlib.file_digest(source,"sha256").hexdigest()
     target.with_suffix(".zip.sha256").write_text(digest + "  " + target.name + "\n", encoding="ascii")
+    release = {"tag_name": "v" + manifest["version"], "assets": [{
+        "name": target.name, "size": target.stat().st_size, "digest": "sha256:" + digest,
+        "browser_download_url": "https://github.com/KellenGO/SiYe-AI/releases/download/v" + manifest["version"] + "/" + target.name
+    }]}
+    (target.parent / "extension-release.json").write_text(json.dumps(release, indent=2), encoding="utf-8")
     print(target)
 if __name__ == "__main__":
     main()
