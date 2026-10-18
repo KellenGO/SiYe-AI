@@ -181,7 +181,7 @@ const job: ResearchJob = {
   external_sources: [],
   web_errors: [],
   usage: { prompt_tokens: 41280, completion_tokens: 1187, total_tokens: 42467 },
-  context_tokens: 12840,
+  context_tokens: 286400,
   cost_usd: null,
 };
 

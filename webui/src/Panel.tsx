@@ -24,14 +24,13 @@ function formatTokens(value: number | undefined): string {
   return value >= 1000 ? `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k` : String(Math.round(value));
 }
 
-/** 上下文上限只用于画环，按常见服务的窗口估算；未知服务按 128k 处理。 */
-function contextWindowOf(baseUrl?: string): number {
-  try {
-    const host = new URL(baseUrl ?? "").hostname;
-    if (host.includes("googleapis") || host.includes("generativelanguage")) return 1000000;
-    if (host.includes("openai")) return 400000;
-    if (host.includes("deepseek")) return 128000;
-  } catch { /* fall through */ }
+/** 上下文上限只用于画环；按模型名匹配常见窗口，未知模型按 128k 保守估计。 */
+function contextWindowOf(model?: string): number {
+  const name = (model ?? "").toLowerCase();
+  if (name.includes("deepseek")) return 1000000;
+  if (name.includes("gemini")) return 1000000;
+  if (name.includes("gpt")) return 400000;
+  if (name.includes("claude")) return 200000;
   return 128000;
 }
 
@@ -317,7 +316,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     try { return new URL(config.data?.base_url ?? "").hostname; } catch { return label("research.customService", "自定义服务"); }
   })();
   const modelOptions = Array.from(new Set([...(config.data?.model ? [config.data.model] : []), ...(provider?.models ?? [])]));
-  const contextLimit = contextWindowOf(config.data?.base_url);
+  const contextLimit = contextWindowOf(config.data?.model);
   const recentSessions = (conversations.data ?? []).filter((row) => !row.archived);
   const archivedSessions = (conversations.data ?? []).filter((row) => row.archived);
   const visibleSessions = (sessionTab === "archived" ? archivedSessions : recentSessions)

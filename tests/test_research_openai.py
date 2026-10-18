@@ -346,3 +346,33 @@ async def test_provider_context_error_is_safe_and_summary_output_is_bounded(monk
     monkeypatch.setattr(module, "CONTEXT_SOFT_LIMIT", 6000)
     with pytest.raises(ValueError, match="完整整理"):
         await module.run_openai(payload(materials=[row]), lambda _: None)
+
+def test_context_window_uses_known_model_family():
+    from siye_ai.context_window import window_for
+    assert window_for("deepseek-flash") == 1_000_000
+    assert window_for("gemini-3.8-flash") == 1_000_000
+    assert window_for("gpt-5.2") == 400_000
+    assert window_for("claude-sonnet-4") == 200_000
+    assert window_for("local-model") == 128_000
+
+
+@pytest.mark.asyncio
+async def test_compaction_falls_back_to_excerpt_when_summary_input_is_rejected(monkeypatch):
+    monkeypatch.setenv("SIYE_RESEARCH_API_KEY", "isolated-key")
+    row = source()
+    row["body"] = component("ok", text="价格 120 元，敏感肌需先试用。" * 600)
+    events, state = [], {"read": False}
+    async def completion(client, data, messages, tools):
+        if data.get("output_tokens"):
+            raise module.ContextLimitError("上下文不足")
+        if not state["read"]:
+            state["read"] = True
+            return response("read_material", {"key": "S1", "section": "body", "index": 0})
+        return response(content="价格为 120 元。[S1:body]")
+    monkeypatch.setattr(module, "completion", completion)
+    monkeypatch.setattr(module, "CONTEXT_SOFT_LIMIT", 6000)
+    monkeypatch.setattr(module, "summary_batch_size", lambda model: 3000)
+    output = await module.run_openai(payload(materials=[row]), events.append)
+    assert "120 元" in json.dumps(output["document"], ensure_ascii=False)
+    finished = [event for event in events if event.get("tool") == "context_compaction" and event["status"] == "completed"]
+    assert finished and "截断" in finished[-1]["summary"]

@@ -35,7 +35,15 @@ cd webui; npm run shot -- --url "file:///.../.preview/site/dev/index.html#dark" 
 
 `tests/test_streaming.py` 覆盖 SSE 拼装、工具调用增量合并、`stream_options` 被拒后的回退、增量事件与 `delta_reset` 的顺序，以及「未开启流式时不产生任何 delta 事件」的兼容性。主程序侧的事件落库、清空与历史不落盘由 `tests/test_research.py` 覆盖。
 
-## 四、这一轮没做的事
+## 四、上下文预算与自动压缩
+
+- 窗口按模型名取：DeepSeek／Gemini 1M、GPT 400k、Claude 200k，其它 128k（`siye_ai/context_window.py`）。
+- 软阈值是窗口的 55%、硬阈值 85%。超过软阈值时把已读证据分批交回同一模型压成事实笔记，再继续研究。
+- 单段超长证据按批大小切片，不再因为一段读不完就整轮失败。
+- 压缩调用本身被服务拒绝时先减半重试，仍不行就保留原文截断继续，步骤摘要会写「有证据按原文截断」。
+- 界面右下角的半圆环用同一张窗口表估算百分比，悬停可看绝对 token。
+
+## 五、这一轮没做的事
 
 - Anthropic（`claude_agent_sdk`）路径仍是非流式，只在每条 AssistantMessage 完整到达后更新。
 - 主程序 `webui/src/index.css` 里仍有旧的 `.space-research-*` 面板规则（约 35 处）。扩展样式优先级更高，已在 `styles.css` 顶部显式复位会叠加的 `display`／`gap`／`margin`；这些旧规则可以下一步整体退休，但需要主程序侧做视觉回归。
