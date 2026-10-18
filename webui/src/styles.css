@@ -41,6 +41,20 @@
 .space-research-dialog .space-research-body { display: block; }
 .space-research-dialog .space-research p { margin: 0; }
 .space-research-dialog .space-research-actions { flex-wrap: nowrap; gap: 2px; }
+.space-research-dialog .research-chat-turn { display: block; }
+.space-research-dialog .research-message-label { font-weight: 400; }
+/* 旧规则把 .research-user-message 本身当成气泡（padding + 底色），新结构里它只是定位容器。 */
+.space-research-dialog .research-user-message {
+  display: flex;
+  justify-content: flex-end;
+  align-self: stretch;
+  max-width: none;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  white-space: normal;
+  line-height: inherit;
+}
 
 .space-research-dialog::backdrop { background: color-mix(in srgb, var(--sr-ink) 18%, transparent); }
 .space-research-dialog.is-split { box-shadow: none; }
@@ -121,6 +135,7 @@
 .space-research-dialog .research-chat-context {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   padding: 9px 18px;
   border-bottom: 1px solid var(--sr-line);

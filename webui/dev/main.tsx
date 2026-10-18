@@ -5,6 +5,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import axios from "axios";
 import Panel from "../src/Panel";
+import "./legacy-host.css";
 import "../src/styles.css";
 import { installMockAdapter } from "./mockAdapter";
 import type { NoteBridge, WorkspaceSplitLayout } from "../src/contract";
