@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SiYe AI · 预览台</title>
+  <style>
+    /* 与四野主程序保持同一套主题变量，预览台才看得出真实配色。 */
+    :root {
+      color-scheme: light;
+      --siye-bg: #fff;
+      --siye-ink: #202945;
+      --siye-secondary: #606b80;
+      --siye-muted: #7a8397;
+      --siye-line: #e8eaf1;
+      --siye-line-strong: #d8dce8;
+      --siye-soft: #f8f9fc;
+      --siye-brand: #6573ff;
+      --siye-brand-soft: #f0f2ff;
+      --siye-brand-ink: #4e5bd2;
+      --siye-green: #168568;
+      --siye-amber: #98621e;
+      --siye-red: #bf4958;
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --siye-bg: #101218;
+      --siye-ink: #e9ecf5;
+      --siye-secondary: #b0b8cb;
+      --siye-muted: #919bb1;
+      --siye-line: #282d39;
+      --siye-line-strong: #3c4354;
+      --siye-soft: #171b24;
+      --siye-brand: #98a2ff;
+      --siye-brand-soft: #20263d;
+      --siye-brand-ink: #abb3ff;
+      --siye-green: #67c9a6;
+      --siye-amber: #e0b477;
+      --siye-red: #ef8b97;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--siye-bg);
+      color: var(--siye-ink);
+      font-family: "PingFang SC", "Microsoft YaHei", -apple-system, "Segoe UI", sans-serif;
+      padding-right: var(--research-panel-width, 0px);
+      transition: padding-right 0.18s ease;
+    }
+    #root { min-height: 100vh; }
+    .dev-note { max-width: 720px; margin: 0 auto; padding: 56px 40px 120px; }
+    .dev-note-meta { font-size: 12px; color: var(--siye-muted); letter-spacing: .04em; }
+    .dev-note h1 { font-size: 30px; margin: 18px 0 8px; letter-spacing: -.01em; }
+    .dev-note h2 { font-size: 19px; margin: 34px 0 10px; }
+    .dev-note p, .dev-note li { font-size: 15px; line-height: 1.85; }
+    .dev-note-quiet { color: var(--siye-muted); font-size: 13px !important; }
+    .dev-note ul { padding-left: 22px; }
+    .dev-reopen {
+      position: fixed; right: 28px; bottom: 28px; z-index: 20;
+      padding: 10px 16px; border-radius: 10px; border: 1px solid var(--siye-line-strong);
+      background: var(--siye-bg); color: var(--siye-ink); font-size: 13px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <pre id="dev-error" style="color:#b4231d;font-size:12px;white-space:pre-wrap;padding:16px"></pre>
+  <script>
+    const show = (label, value) => {
+      const box = document.getElementById("dev-error");
+      if (box) box.textContent += `\n[${label}] ${value}`;
+    };
+    window.addEventListener("error", (event) => show("error", `${event.message}\n${event.error && event.error.stack || ""}`));
+    window.addEventListener("unhandledrejection", (event) => show("rejection", String(event.reason && event.reason.stack || event.reason)));
+  </script>
+  <script type="module" src="/dev/main.tsx"></script>
+</body>
+</html>

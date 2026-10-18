@@ -14,6 +14,8 @@
 
 Python 3.11+，按 pyproject.toml 安装依赖；webui 内运行 npm ci。Python 测试用 python -m pytest tests；界面用 npm run build。模型测试只用模拟服务，不调用真实付费模型。
 
+界面可以在不启动主程序的情况下预览：webui 内 npm run preview:panel 起本地预览台（mock 数据，默认 5288），端口不可用时用 npm run preview:static 构建静态页面直接打开；npm run shot 用无头浏览器截图。面板样式跟随主程序主题变量，流式渲染的宿主契约见 [docs/streaming-and-ui.md](docs/streaming-and-ui.md)。
+
 ## Windows 发布
 
 运行 python scripts/build.py，输出 dist/SiYe-AI-Windows-x64.zip 及 SHA256 文件。用户无需安装 Python 或 Node。包内 extension.json 声明插件版本及四野版本范围。GitHub Release 标签必须与扩展版本一致，正式下载来源固定为 KellenGO/SiYe-AI。

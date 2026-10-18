@@ -1,36 +1,117 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createElement, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUp, Check, ChevronDown, Columns2, Globe, History, LoaderCircle, Maximize2, MessageSquare, Minimize2, NotebookPen, Plus, Search, Sparkles, Square, Terminal, X } from "lucide-react";
+import { ArrowUp, BookOpen, Captions, Check, ChevronDown, Columns2, Globe, History, LoaderCircle, Maximize2, MessageSquare, Minimize2, NotebookPen, Plus, Search, Sparkles, Square, Terminal, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import * as api from "./researchApi";
-import { sectionReading, transcriptDuration } from "./researchPresentation";
+import { citedSources, platformLabel, readingSummary, referenceOf, sectionReading, sourceIndex, transcriptDuration, type SourceEntry } from "./researchPresentation";
+import { numberingFor, partialDocument } from "./partial";
 import { spaceError } from "siye-host";
 import type { NoteDocument, NoteBridge } from "./contract";
 import type { WorkspaceSplitLayout } from "./contract";
 
-function previewNode(node: NoteDocument, index: number): ReactNode {
-  const children = node.content?.map(previewNode);
+function renderChildren(nodes: NoteDocument[] | undefined, sources: Record<string, SourceEntry>, numbering: Record<string, string>, key: string): ReactNode[] {
+  const list = nodes ?? [];
+  return list.reduce<ReactNode[]>((all, node, index) => {
+    const reference = node.type === "text" && node.marks?.some((mark) => mark.type === "link") ? referenceOf(node.text ?? "") : null;
+    if (reference) {
+      // 同一来源连续出现时只保留一个角标，避免 “4 4” 这种重复。
+      let previous: string | null = null;
+      for (let back = index - 1; back >= 0; back -= 1) {
+        const sibling = list[back];
+        if (sibling.type === "text" && !(sibling.text ?? "").trim()) continue;
+        previous = sibling.type === "text" ? referenceOf(sibling.text ?? "")?.citation ?? null : null;
+        break;
+      }
+      if (previous === reference.citation) return all;
+    }
+    all.push(renderNode(node, sources, numbering, `${key}-${index}`));
+    return all;
+  }, []);
+}
+
+function renderNode(node: NoteDocument, sources: Record<string, SourceEntry>, numbering: Record<string, string>, key: string): ReactNode {
+  const children = node.content ? renderChildren(node.content, sources, numbering, key) : undefined;
   if (node.type === "text") {
     const link = node.marks?.find((mark) => mark.type === "link");
+    const reference = referenceOf(node.text ?? "");
+    const source = reference ? sources[reference.citation] : undefined;
+    if (reference && source) {
+      return <sup key={key} className="research-cite"><a href={source.url} target="_blank" rel="noopener noreferrer"
+        title={`${numbering[reference.citation] ?? reference.citation} · ${source.title}${reference.section ? ` · ${reference.section}` : ""}`}>{numbering[reference.citation] ?? reference.citation.replace(/^S/, "")}</a></sup>;
+    }
     const value = node.marks?.some((mark) => mark.type === "bold") ? <strong>{node.text}</strong> : node.text;
-    return link ? <a key={index} href={String(link.attrs?.href)} target="_blank" rel="noopener noreferrer">{value}</a> : <span key={index}>{value}</span>;
+    return link ? <a key={key} href={String(link.attrs?.href)} target="_blank" rel="noopener noreferrer">{value}</a> : <span key={key}>{value}</span>;
   }
-  if (node.type === "heading") return node.attrs?.level === 1 ? <h1 key={index}>{children}</h1> : node.attrs?.level === 2 ? <h2 key={index}>{children}</h2> : <h3 key={index}>{children}</h3>;
-  if (node.type === "paragraph") return <p key={index}>{children}</p>;
-  if (node.type === "bulletList") return <ul key={index}>{children}</ul>;
-  if (node.type === "orderedList") return <ol key={index} start={Number(node.attrs?.start) || 1}>{children}</ol>;
-  if (node.type === "listItem") return <li key={index}>{children}</li>;
-  return <div key={index}>{children}</div>;
+  if (node.type === "heading") {
+    const level = node.attrs?.level === 1 ? "h1" : node.attrs?.level === 2 ? "h2" : "h3";
+    return createElement(level, { key }, children);
+  }
+  if (node.type === "paragraph") return <p key={key}>{children}</p>;
+  if (node.type === "bulletList") return <ul key={key}>{children}</ul>;
+  if (node.type === "orderedList") return <ol key={key} start={Number(node.attrs?.start) || 1}>{children}</ol>;
+  if (node.type === "listItem") return <li key={key}>{children}</li>;
+  return <div key={key}>{children}</div>;
+}
+
+function readLabel(row: api.ResearchJob["coverage"][number] | undefined, label: (key: string, fallback: string) => string): string {
+  if (!row?.sections) return "";
+  return (["body", "comments", "subtitles"] as const)
+    .filter((name) => row.sections![name].chunks > 0)
+    .map((name) => `${label(`research.component.${name}`, name === "body" ? "正文" : name === "comments" ? "评论" : "字幕")} ${row.sections![name].read_chunks}/${row.sections![name].chunks}`)
+    .join(" · ");
+}
+
+function SourceList({ document, sources, coverage }: {
+  document: NoteDocument | null; sources: Record<string, SourceEntry>; coverage: api.ResearchJob["coverage"];
+}) {
+  const { t } = useTranslation();
+  const label = (key: string, fallback: string) => String(t(key, { defaultValue: fallback }) as unknown as string);
+  const list = citedSources(document, sources);
+  if (!list.length) return null;
+  return <section className="research-sources" aria-label={t("research.coverage")}>
+    <h3>{t("research.coverage", { defaultValue: "来源" })} · {list.length}</h3>
+    <div className="research-source-list">
+      {list.map((source, index) => {
+        const row = coverage.find((item) => item.key === source.key);
+        return <a className="research-source" key={source.citation} href={source.url} target="_blank" rel="noopener noreferrer">
+          <b>{index + 1}</b>
+          {source.platform ? <em>{platformLabel(source.platform)}</em> : <em>网页</em>}
+          <span>{source.title}</span>
+          <small>{readLabel(row, label)}</small>
+        </a>;
+      })}
+    </div>
+  </section>;
+}
+
+function LiveProgress({ row, elapsed, streaming }: { row: api.ResearchJob; elapsed: number; streaming: boolean }) {
+  const { t } = useTranslation();
+  const steps = (row.activity ?? []).filter((event) => event.kind !== "commentary").slice(-3);
+  return <div className="research-live" role="status" aria-live="polite">
+    <div className="research-live-head">
+      <LoaderCircle className="research-tool-spinner" aria-hidden="true" />
+      <strong>{t(`research.status.${row.status}`)}</strong>
+      {row.status === "collecting" && row.total_materials > 0 && <span className="research-live-count">{row.materials.length} / {row.total_materials}</span>}
+      {elapsed > 0 && <span className="research-live-time">{elapsed}s</span>}
+    </div>
+    {steps.length > 0 && <ol className="research-live-steps">{steps.map((event) => <li key={event.id ?? event.message}>
+      {event.status === "running" ? <LoaderCircle className="research-tool-spinner" aria-hidden="true" /> : <Check aria-hidden="true" />}
+      <span>{event.summary || event.message}</span>
+    </li>)}</ol>}
+    <div className="research-skeleton" aria-hidden="true" hidden={streaming}><i /><i /><i /></div>
+  </div>;
 }
 
 export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, note, archived, open, onClose, split }: {
   spaceId: number; spaceName: string; sourceCount: number; note: NoteBridge; archived: boolean; open: boolean; onClose: () => void; split: WorkspaceSplitLayout;
 }) {
   const { t } = useTranslation();
+  const label = (key: string, fallback: string) => String(t(key, { defaultValue: fallback }) as unknown as string);
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const body = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
   const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 1000px)").matches);
   const [width, setWidth] = useState(() => {
     try { return Math.max(360, Math.min(Number(localStorage.getItem("siye-research-width")) || 560, window.innerWidth)); } catch { return 560; }
@@ -72,7 +153,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     window.addEventListener("resize", resize);
     return () => { media.removeEventListener("change", update); window.removeEventListener("resize", resize); };
   }, []);
-  const minimumWidth = sessionsOpen ? 680 : 360;
+  const minimumWidth = 360;
   const panelWidth = split.active ? viewportWidth - split.noteWidth : narrow || expanded ? viewportWidth : Math.min(Math.max(width, minimumWidth), viewportWidth);
   const fullscreen = !split.active && !narrow && panelWidth === viewportWidth;
   useEffect(() => {
@@ -87,8 +168,23 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     if (narrow) element.showModal(); else element.show();
     return () => { element.close(); };
   }, [open, narrow]);
+  useEffect(() => {
+    const element = composer.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${Math.min(element.scrollHeight, 200)}px`;
+  }, [question, open]);
   const running = job?.status === "collecting" || job?.status === "analyzing";
   const locked = busy || running || job?.status === "awaiting_sources";
+  const [clock, setClock] = useState(0);
+  const started = useRef<{ id: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!running || !job) { started.current = null; return; }
+    if (started.current?.id !== job.job_id) started.current = { id: job.job_id, at: Date.now() };
+    const timer = setInterval(() => setClock((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, [running, job?.job_id]);
+  const elapsed = clock >= 0 && started.current && started.current.id === job?.job_id ? Math.max(0, Math.round((Date.now() - started.current.at) / 1000)) : 0;
   useEffect(() => {
     if (!open || !running || !job) return;
     let disposed = false;
@@ -102,14 +198,21 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
           if (!["collecting", "analyzing"].includes(next.status)) void conversations.refetch();
         }
       } catch (cause) { if (!disposed && version === jobVersion.current) setError(spaceError(cause)); }
-      if (!disposed) timer = setTimeout(() => { void poll(); }, 1000);
+      if (!disposed) timer = setTimeout(() => { void poll(); }, 500);
     };
     timer = setTimeout(() => { void poll(); }, 600);
     return () => { disposed = true; clearTimeout(timer); };
   }, [open, running, job?.job_id]);
   useEffect(() => {
-    if (open && job?.status === "ready") body.current?.scrollTo({ top: body.current.scrollHeight });
-  }, [open, job?.job_id, job?.status]);
+    const element = body.current;
+    if (!open || !element) return;
+    const turns = element.querySelectorAll<HTMLElement>(".research-chat-turn");
+    const last = turns[turns.length - 1];
+    if (!last) { element.scrollTo({ top: 0 }); return; }
+    // 长回答从问题处开始读，短回答贴底显示，避免一进来就落在正文中间。
+    const offset = last.getBoundingClientRect().top - element.getBoundingClientRect().top + element.scrollTop;
+    element.scrollTo({ top: last.offsetHeight < element.clientHeight - 24 ? element.scrollHeight : Math.max(0, offset - 10) });
+  }, [open, job?.job_id, job?.status, turns.length]);
   const run = async (operation: () => Promise<void>) => {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError(""); setNotice("");
@@ -164,7 +267,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
       }
     } else { setExpanded(true); setSessionsOpen(true); }
   };
-  return createPortal(<dialog ref={dialog} className={`space-research-dialog${fullscreen ? " is-expanded" : ""}${split.active ? " is-split" : ""}${sessionsOpen && !narrow && !split.active ? " has-session-column" : ""}`} aria-labelledby={titleId}
+  return createPortal(<dialog ref={dialog} className={`space-research-dialog${fullscreen ? " is-expanded" : ""}${split.active ? " is-split" : ""}`} aria-labelledby={titleId}
     onCancel={(event) => { event.preventDefault(); onClose(); }}
     onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (sessionsOpen) setSessionsOpen(false); else if (split.active) split.restore(); else onClose(); } }}>
     {!narrow && <div className="research-resize-handle" role="separator" tabIndex={0} aria-orientation="vertical" aria-label={t(split.active ? "spaces.resizeSplit" : "research.resizePanel")} title={split.active ? t("spaces.resizeSplitHint") : undefined} aria-valuemin={split.active ? 360 : minimumWidth} aria-valuemax={split.active ? viewportWidth - 360 : viewportWidth} aria-valuenow={split.active ? split.noteWidth : panelWidth}
@@ -188,27 +291,47 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
       <div className="research-chat-context"><span>{spaceName}</span><span>{t("research.selectedSources", { count: sourceCount })}</span></div>
       <div className="space-research-body" ref={body}>
         {config.data && !config.data.has_key && <p className="space-research-warning">{t("research.setupRequired")} <a href="#/settings/ai">{t("research.configure")}</a></p>}
-        {!job && <div className="research-chat-empty"><Sparkles aria-hidden="true" /><h3>{t("research.chatWelcome")}</h3><p>{t(sourceCount === 0 ? "research.addSourcesFirst" : "research.chatIntro")}</p>
+        {!job && <div className="research-chat-empty">
+          <div className="research-empty-mark"><Sparkles aria-hidden="true" /></div>
+          <h3>{t("research.chatWelcome")}</h3>
+          <p>{t(sourceCount === 0 ? "research.addSourcesFirst" : "research.chatIntro")}</p>
           <div className="research-starters">{["starterSummary", "starterCompare", "starterGaps"].map((key) => <button type="button" key={key} disabled={archived || sourceCount === 0} onClick={() => { setQuestion(t(`research.${key}`)); dialog.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus(); }}>{t(`research.${key}`)}</button>)}</div>
         </div>}
         {displayed.map((row) => {
           const current = row.job_id === job?.job_id;
           const rowInserted = note.hasResearch(row.job_id);
           const rowApplied = note.hasSavedResearch(row.job_id) || wasApplied(row.job_id);
+          const sources = sourceIndex(row.materials, row.external_sources);
+          const summary = readingSummary(row.coverage);
+          const cited = citedSources(row.document, sources);
+          const numbering = Object.fromEntries(cited.map((item, index) => [item.citation, String(index + 1)]));
           return <article className="research-chat-turn" key={row.job_id}>
-            <div className="research-user-message">{row.question || t("research.defaultQuestion")}</div>
+            <div className="research-user-message"><p>{row.question || t("research.defaultQuestion")}</p></div>
             <div className="research-assistant-message">
-              <div className="research-message-label"><Sparkles aria-hidden="true" /><span>{t("research.assistantName")}</span></div>
-              {!row.document && <p className="research-chat-status" role="status">{t(`research.status.${row.status}`)}{row.status === "collecting" && ` · ${row.materials.length} / ${row.total_materials}`}</p>}
+              <div className="research-message-label">
+                <span className="research-avatar"><Sparkles aria-hidden="true" /></span>
+                <span>{t("research.assistantName")}</span>
+                {row.document && summary.materials > 0 && <span className="research-evidence">
+                  <span>{t("research.selectedSources", { count: summary.materials })}</span>
+                  {summary.body.total > 0 && <span><BookOpen aria-hidden="true" />{t("research.component.body")} {summary.body.read}/{summary.body.total}</span>}
+                  {summary.comments.total > 0 && <span><MessageSquare aria-hidden="true" />{t("research.component.comments")} {summary.comments.read}/{summary.comments.total}</span>}
+                  {summary.subtitles.total > 0 && <span><Captions aria-hidden="true" />{t("research.component.subtitles")} {summary.subtitles.read}/{summary.subtitles.total}</span>}
+                  {summary.unread > 0 && <span className="is-warn" title={t("research.unread")}>{label("research.partial", "部分未读完")}</span>}
+                </span>}
+              </div>
+              {!row.document && <LiveProgress row={row} elapsed={current ? elapsed : 0} streaming={!!row.partial} />}
+              {!row.document && row.partial && <div className="space-research-preview is-streaming">{renderChildren(partialDocument(row.partial).content, sources, numberingFor(row.partial, sources), `${row.job_id}-live`)}</div>}
               {row.error && <p role="alert">{row.error}</p>}
-              {(row.materials.length > 0 || !!row.activity?.length || row.external_sources.length > 0 || row.web_errors.length > 0 || row.stale_snapshot) && <details className="research-tool-trace">
-                <summary><ChevronDown aria-hidden="true" />{t("research.replyDetails")}</summary>
+              {row.document && <div className="space-research-preview" aria-label={t("research.preview")}>{renderChildren(row.document.content, sources, numbering, row.job_id)}</div>}
+              {row.document && <SourceList document={row.document} sources={sources} coverage={row.coverage} />}
+              {!running && (row.materials.length > 0 || !!row.activity?.length || row.external_sources.length > 0 || row.web_errors.length > 0 || row.stale_snapshot) && <details className="research-tool-trace">
+                <summary><ChevronDown aria-hidden="true" />{label("research.trace", "读取过程")}{row.activity?.length ? ` · ${row.activity.length}` : ""}</summary>
                 <p className="space-research-hint">{t(row.web_enabled ? "research.webUsed" : "research.spaceUsed")}</p>
                 {row.status === "collecting" && row.phase === "transcribing" && <p className="space-research-hint">{row.message}</p>}
                 {row.stale_snapshot && <p className="space-research-warning">{t("research.stale")}</p>}
                 {!!row.activity?.length && <div className="research-execution" aria-label={t("research.toolProcess")}>
                 {row.activity.map((event, index) => event.kind === "commentary" ? <div className="research-process-commentary" key={event.id || index}><small>{t("research.processCommentary")}</small><p>{event.message}</p></div> : <details className={`research-tool-step is-${event.status || (event.message.includes("未完成") ? "failed" : "completed")}`} key={event.id || index}>
-                  <summary><ChevronDown aria-hidden="true" /><Terminal aria-hidden="true" /><strong>{event.tool.replace("mcp__research__", "")}</strong><span>{event.message !== event.tool ? event.message : event.summary}</span>{event.status === "running" && ["failed", "cancelled"].includes(row.status) ? <X aria-label={t("research.toolState.cancelled")} /> : event.status === "running" ? <LoaderCircle className="research-tool-spinner" aria-label={t("research.toolState.running")} /> : event.status === "failed" || event.status === "cancelled" ? <X aria-label={t(`research.toolState.${event.status}`)} /> : <Check aria-label={t("research.toolState.completed")} />}</summary>
+                  <summary><Terminal aria-hidden="true" /><strong>{event.tool.replace("mcp__research__", "")}</strong><span>{event.message !== event.tool ? event.message : event.summary}</span>{event.status === "running" && ["failed", "cancelled"].includes(row.status) ? <X aria-label={t("research.toolState.cancelled")} /> : event.status === "running" ? <LoaderCircle className="research-tool-spinner" aria-label={t("research.toolState.running")} /> : event.status === "failed" || event.status === "cancelled" ? <X aria-label={t(`research.toolState.${event.status}`)} /> : <Check aria-label={t("research.toolState.completed")} />}</summary>
                   <div className="research-tool-result"><span>{t(`research.toolState.${event.status === "running" && ["failed", "cancelled"].includes(row.status) ? "cancelled" : event.status || "completed"}`)}</span><p>{event.summary || event.message}</p></div>
                 </details>)}
                 </div>}
@@ -228,7 +351,6 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
                     }).join(" · ")}</p>}
                   </article>)}</div>
                 </section>}
-                {row.document && row.coverage.some((item) => !item.complete) && <p className="space-research-warning">{t("research.unread")}</p>}
                 {row.web_errors.length > 0 && <p className="space-research-hint">{t("research.webFailed")}</p>}
                 {row.external_sources.length > 0 && <section className="research-external-sources"><h3>{t("research.externalSources")}</h3>{row.external_sources.map((source) => <p key={source.id}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a><span> · {source.level} · {source.fetched_at}</span></p>)}</section>}
               </details>}
@@ -237,7 +359,6 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
                 <button type="button" className="btn small" disabled={busy || archived} onClick={() => void run(async () => { await updateJob(() => api.researchAction(row.job_id, "retry")); })}>{t("research.retrySources")}</button>
               </div></div>}
               {row.document && <>
-                <div className="space-research-preview" aria-label={t("research.preview")}>{row.document.content?.map(previewNode)}</div>
                 {rowInserted && !rowApplied && <p className="space-research-warning">{t("research.draftInserted")}</p>}
                 <div className="research-reply-actions"><button type="button" className="btn small primary research-write-note" disabled={archived || busy || note.conflict || rowApplied} onClick={() => void append(row)}>{rowApplied ? <Check aria-hidden="true" /> : <NotebookPen aria-hidden="true" />}{t(rowApplied ? "research.appended" : rowInserted ? "research.retrySave" : "research.append")}</button></div>
               </>}
@@ -250,7 +371,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
         {(error || config.error || latest.error || preference.error || conversations.error) && <p role="alert">{error || spaceError(config.error || latest.error || preference.error || conversations.error)}</p>}
         {notice && <p role="status">{notice}</p>}
         <div className="research-input-card">
-          <textarea aria-label={t("research.messageInput")} rows={3} maxLength={2000} value={question} placeholder={t("research.messagePlaceholder")} disabled={!!locked || archived} onChange={(event) => setQuestion(event.target.value)}
+          <textarea ref={composer} aria-label={t("research.messageInput")} rows={1} maxLength={2000} value={question} placeholder={t("research.messagePlaceholder")} disabled={!!locked || archived} onChange={(event) => setQuestion(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing && !locked && !sendDisabled) { event.preventDefault(); send(); } }} />
           <div className="research-input-tools"><span className="research-model-label" title={config.data?.model}>{config.data?.model || t("research.noModel")}</span>
             <label className="research-web-toggle" title={t(web ? "research.webHint" : "research.localHint")}><input type="checkbox" aria-label={t("research.allowWeb")} checked={web} disabled={busy || !preference.data} onChange={(event) => {
@@ -264,13 +385,16 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
         <p className="research-input-hint">{t("research.sendShortcut")}</p>
       </div>
     </section>
-      {sessionsOpen && <aside className="research-sessions" aria-label={t("research.history")}>
-        <div className="research-sessions-head"><h3>{t("research.history")}</h3><button type="button" className="research-icon-button" aria-label={t("research.closeHistory")} onClick={() => setSessionsOpen(false)}><X aria-hidden="true" /></button></div>
-        <button type="button" className="research-session-new" disabled={!!locked || !initialized} onClick={newConversation}><Plus aria-hidden="true" />{t("research.newConversation")}</button>
-        <label className="research-session-search"><Search aria-hidden="true" /><input aria-label={t("research.searchHistory")} value={sessionSearch} onChange={(event) => setSessionSearch(event.target.value)} placeholder={t("research.searchHistory")} /></label>
-        <div className="research-session-list">{conversations.data?.filter((row) => row.title.toLocaleLowerCase().includes(sessionSearch.toLocaleLowerCase())).map((row) => <button type="button" key={row.id} className={job?.conversation_id === row.id ? "is-active" : ""} aria-pressed={job?.conversation_id === row.id} disabled={!!locked || !initialized} onClick={() => void switchConversation(row.id)}><MessageSquare aria-hidden="true" /><span>{row.title}<small>{t("research.conversationTurns", { count: row.turns })}</small></span></button>)}</div>
-        <p className="space-research-hint">{t("research.historyHint")}</p>
-      </aside>}
+      {sessionsOpen && <>
+        <div className="research-sessions-scrim" aria-hidden="true" onClick={() => setSessionsOpen(false)} />
+        <aside className="research-sessions" aria-label={t("research.history")}>
+          <div className="research-sessions-head"><h3>{t("research.history")}</h3><button type="button" className="research-icon-button" aria-label={t("research.closeHistory")} onClick={() => setSessionsOpen(false)}><X aria-hidden="true" /></button></div>
+          <button type="button" className="research-session-new" disabled={!!locked || !initialized} onClick={newConversation}><Plus aria-hidden="true" />{t("research.newConversation")}</button>
+          <label className="research-session-search"><Search aria-hidden="true" /><input aria-label={t("research.searchHistory")} value={sessionSearch} onChange={(event) => setSessionSearch(event.target.value)} placeholder={t("research.searchHistory")} /></label>
+          <div className="research-session-list">{conversations.data?.filter((row) => row.title.toLocaleLowerCase().includes(sessionSearch.toLocaleLowerCase())).map((row) => <button type="button" key={row.id} className={job?.conversation_id === row.id ? "is-active" : ""} aria-pressed={job?.conversation_id === row.id} disabled={!!locked || !initialized} onClick={() => void switchConversation(row.id)}><MessageSquare aria-hidden="true" /><span>{row.title}<small>{t("research.conversationTurns", { count: row.turns })}</small></span></button>)}</div>
+          <p className="space-research-hint">{t("research.historyHint")}</p>
+        </aside>
+      </>}
   </dialog>, document.body);
 }
 

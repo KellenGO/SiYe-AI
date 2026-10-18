@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && vite build"
+    "build": "tsc --noEmit && vite build",
+    "preview:panel": "vite --config vite.dev.config.ts",
+    "preview:static": "vite build --config vite.preview.config.ts",
+    "shot": "node dev/shot.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "5.90.12",

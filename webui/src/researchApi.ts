@@ -23,6 +23,7 @@ export interface ResearchJob {
   phase: string; message: string; error: string; materials: ResearchMaterial[];
   total_materials: number;
   document: NoteDocument | null; stale_snapshot?: boolean;
+  partial?: string;
   activity?: { id?: string; tool: string; message: string; status?: "running" | "completed" | "failed" | "cancelled"; summary?: string; kind?: "commentary" }[];
   coverage: { key: string; title: string; chunks: number; read_chunks: number; complete: boolean; sections?: Record<"body" | "comments" | "subtitles", SectionCoverage> }[];
   external_sources: { id: string; title: string; url: string; level: string; fetched_at: string }[];

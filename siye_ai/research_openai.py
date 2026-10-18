@@ -18,18 +18,103 @@ class ContextLimitError(ValueError):
     pass
 
 
+class StreamOptionsUnsupported(Exception):
+    """Provider rejects stream_options; retry once without it."""
+
+
 def function(name, description, properties=None, required=None):
     return {"type": "function", "function": {"name": name, "description": description,
         "parameters": {"type": "object", "properties": properties or {}, "required": required or []}}}
 
 
-async def completion(client, payload, messages, tools):
+def merge_delta(calls, delta):
+    """Tool calls arrive split across chunks; merge them by index, in order."""
+    for row in delta.get("tool_calls") or []:
+        if not isinstance(row, dict):
+            continue
+        index = row.get("index", 0)
+        slot = calls.setdefault(index if type(index) is int else 0,
+                                {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+        if isinstance(row.get("id"), str):
+            slot["id"] = row["id"]
+        if isinstance(row.get("type"), str):
+            slot["type"] = row["type"]
+        call = row.get("function")
+        if isinstance(call, dict):
+            if isinstance(call.get("name"), str):
+                slot["function"]["name"] += call["name"]
+            if isinstance(call.get("arguments"), str):
+                slot["function"]["arguments"] += call["arguments"]
+
+
+async def stream_completion(response, on_text):
+    """Assemble an SSE answer into the same shape as a non-streamed response."""
+    content, reasoning, calls, extra = [], [], {}, None
+    finish, usage, size = None, None, 0
+    async for line in response.aiter_lines():
+        size += len(line)
+        if size > 2 * 1024 * 1024:
+            raise ValueError("AI 响应过大，请缩小研究范围")
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        if not data:
+            continue
+        chunk = json.loads(data)
+        if not isinstance(chunk, dict):
+            raise ValueError("AI 服务未返回有效响应")
+        if isinstance(chunk.get("usage"), dict):
+            usage = chunk["usage"]
+        for choice in chunk.get("choices") or []:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta") or {}
+            piece = delta.get("content")
+            if isinstance(piece, str) and piece:
+                content.append(piece)
+                on_text(piece)
+            thought = delta.get("reasoning_content")
+            if isinstance(thought, str) and thought:
+                reasoning.append(thought)
+            if isinstance(delta.get("extra_content"), dict):
+                extra = delta["extra_content"]
+            merge_delta(calls, delta)
+            if choice.get("finish_reason"):
+                finish = choice["finish_reason"]
+    message = {"role": "assistant", "content": "".join(content)}
+    if reasoning:
+        message["reasoning_content"] = "".join(reasoning)
+    if extra:
+        message["extra_content"] = extra
+    if calls:
+        message["tool_calls"] = [calls[index] for index in sorted(calls)]
+    return {"choices": [{"message": message, "finish_reason": finish or "stop"}], "usage": usage or {}}
+
+
+async def completion(client, payload, messages, tools, on_text=None):
+    body = {"model": payload["model"], "messages": messages, "stream": on_text is not None,
+            **({"max_tokens": payload["output_tokens"]} if payload.get("output_tokens") else {}),
+            **({"tools": tools, "tool_choice": "auto"} if tools else {})}
+    if on_text is not None:
+        body["stream_options"] = {"include_usage": True}
+    try:
+        return await request_completion(client, payload, body, on_text)
+    except StreamOptionsUnsupported:
+        if "stream_options" not in body:
+            raise
+        body.pop("stream_options")
+        return await request_completion(client, payload, body, on_text)
+
+
+async def request_completion(client, payload, body, on_text):
     try:
         async with client.stream("POST", payload["base_url"].rstrip("/") + "/chat/completions",
                 headers={"Authorization": "Bearer " + os.environ["SIYE_RESEARCH_API_KEY"]},
-                json={"model": payload["model"], "messages": messages, "stream": False,
-                      **({"max_tokens": payload["output_tokens"]} if payload.get("output_tokens") else {}),
-                      **({"tools": tools, "tool_choice": "auto"} if tools else {})}) as response:
+                json=body) as response:
+            if response.status_code in {400, 422} and "stream_options" in body:
+                raise StreamOptionsUnsupported()
             if response.status_code in {401, 403}:
                 raise ValueError("AI 服务拒绝访问，请检查 API Key 和模型权限")
             if response.status_code == 429:
@@ -44,6 +129,8 @@ async def completion(client, payload, messages, tools):
                 if any(value in reason for value in ("context_length", "context window", "context length", "input token", "too many tokens")):
                     raise ContextLimitError("AI 服务上下文不足，请缩小空间资料或新建会话")
                 raise ValueError("AI 请求失败，请检查基础地址、模型及工具调用兼容性")
+            if on_text is not None:
+                return await stream_completion(response, on_text)
             chunks, size = [], 0
             async for chunk in response.aiter_bytes():
                 size += len(chunk)
@@ -58,6 +145,26 @@ async def completion(client, payload, messages, tools):
         raise ValueError("AI 服务未返回有效响应，请检查配置或稍后重试") from None
 
 
+class DeltaBuffer:
+    """Merge token chunks into a few host events instead of thousands."""
+
+    def __init__(self, emit, size=48):
+        self.emit = emit
+        self.size = size
+        self.pending = []
+
+    def push(self, piece):
+        self.pending.append(piece)
+        if sum(len(value) for value in self.pending) >= self.size:
+            self.flush()
+
+    def flush(self):
+        if not self.pending:
+            return
+        self.emit({"type": "delta", "text": "".join(self.pending)})
+        self.pending = []
+
+
 async def run_openai(payload, emit):
     probe = payload.get("mode") == "probe"
     web = bool(payload.get("web_enabled"))
@@ -67,6 +174,7 @@ async def run_openai(payload, emit):
     activity = ToolActivity(emit)
     read_guard = ReadLoopGuard()
     submit_failures = 0
+    delta = DeltaBuffer(emit) if payload.get("stream") else None
     tools = [function("check_connection", "验证工具调用后再回复 OK")] if probe else [
         function("manifest", "列出选定空间资料及外部来源、分段数、读取情况"),
         function("read_material", "按 section 读取资料的一段；网页仅支持 body，index 从 0 开始",
@@ -163,12 +271,18 @@ async def run_openai(payload, emit):
                 raise ContextLimitError("AI 上下文不足以容纳资料清单，请缩小空间资料后重试")
             emit({"type": "progress", "phase": "analyzing", "message": "正在等待模型回复"})
             try:
-                response = await completion(client, payload, messages, tools)
+                if delta:
+                    response = await completion(client, payload, messages, tools, delta.push)
+                else:
+                    response = await completion(client, payload, messages, tools)
             except ContextLimitError:
                 if probe:
                     raise
                 await compact_context(client, SUMMARY_BATCH_SIZE // 2)
-                response = await completion(client, payload, messages, tools)
+                if delta:
+                    response = await completion(client, payload, messages, tools, delta.push)
+                else:
+                    response = await completion(client, payload, messages, tools)
             record_usage(response)
             try:
                 choice = response["choices"][0]
@@ -193,6 +307,8 @@ async def run_openai(payload, emit):
                         return {"connection_ok": True, "web_ok": web}
                     raise ValueError("AI 工具或联网测试未通过，不能确认服务兼容")
                 text = message.get("content") or ""
+                if delta:
+                    delta.flush()
                 try:
                     encoded = text.strip()
                     if encoded.startswith("```json") or encoded.startswith("```\n"):
@@ -205,9 +321,16 @@ async def run_openai(payload, emit):
                 except SourceReferenceError as error:
                     if citation_repaired:
                         raise
+                    if delta:
+                        delta.flush()
+                        emit({"type": "delta_reset"})
                     citation_repaired = True
                     messages.append({"role": "user", "content": str(error)})
                     continue
+            if delta:
+                # 带工具调用的文本是中途说明，转交给读取过程，不再当作答案显示。
+                delta.flush()
+                emit({"type": "delta_reset"})
             if not tools:
                 raise ValueError("AI 仍调用已关闭的工具；重复调用未取得证据，请重试问题")
             activity.commentary(message.get("content"))

@@ -8,3 +8,4 @@ dist/
 agent_runtime/
 .pytest_cache/
 .tmp_*/
+.preview/
