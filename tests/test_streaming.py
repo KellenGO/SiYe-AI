@@ -127,7 +127,7 @@ async def test_usage_reports_context_tokens(monkeypatch):
         return {"choices": [{"message": {"content": "答案是八点出发。"}}],
                 "usage": {"prompt_tokens": 3210, "completion_tokens": 12, "total_tokens": 3222}}
     monkeypatch.setattr(research_openai, "completion", completion)
-    await research_openai.run_openai({"materials": [source()], "base_url": "https://example.com",
+    await research_openai.run_openai({"materials": [], "base_url": "https://example.com",
         "model": "test", "space_name": "攻略", "description": ""}, events.append)
     usage = [event for event in events if event["type"] == "usage"]
     assert usage and usage[-1]["context_tokens"] == 3210
@@ -178,6 +178,6 @@ async def test_agent_without_stream_flag_emits_no_delta_events(monkeypatch):
     async def completion(client, payload, messages, tools):
         return {"choices": [{"message": {"content": "这是一段不带引用的普通回答。"}, "finish_reason": "stop"}]}
     monkeypatch.setattr(research_openai, "completion", completion)
-    await research_openai.run_openai({"materials": [source()], "base_url": "https://example.com", "model": "test",
+    await research_openai.run_openai({"materials": [], "base_url": "https://example.com", "model": "test",
         "space_name": "攻略", "description": ""}, events.append)
     assert not [event for event in events if event["type"].startswith("delta")]

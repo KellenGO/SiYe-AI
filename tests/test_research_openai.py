@@ -86,6 +86,7 @@ async def test_native_loop_preserves_provider_metadata_and_source_coverage(monke
 @pytest.mark.asyncio
 async def test_natural_chat_and_public_commentary_do_not_require_a_report(monkeypatch):
     replies = [response("manifest", content="先查看你选入的资料。", reasoning_content="private-thinking"),
+               response("read_material", {"key": "S1", "section": "body", "index": 0}),
                response(content="可以，你可以直接告诉我想了解什么。", reasoning_content="private-thinking")]
     events = []
     async def completion(client, data, messages, tools):
@@ -94,7 +95,7 @@ async def test_natural_chat_and_public_commentary_do_not_require_a_report(monkey
     monkeypatch.setattr(module, "completion", completion)
     output = await module.run_openai(payload(question="你好"), events.append)
     assert "可以，你可以直接告诉我" in json.dumps(output["document"], ensure_ascii=False)
-    assert not output["coverage"][0]["complete"]
+    assert output["coverage"][0]["complete"]
     assert "未经空间资料验证" not in json.dumps(output["document"], ensure_ascii=False)
     assert any(event.get("kind") == "commentary" and event["message"] == "先查看你选入的资料。" for event in events)
     assert "private-thinking" not in json.dumps(events)
@@ -107,7 +108,7 @@ async def test_invalid_tool_activity_ends_with_failure(monkeypatch):
     async def completion(*args):
         return replies.pop(0)
     monkeypatch.setattr(module, "completion", completion)
-    await module.run_openai(payload(), events.append)
+    await module.run_openai(payload(materials=[]), events.append)
     activity = [event for event in events if event["type"] == "activity"]
     assert [event["status"] for event in activity] == ["running", "failed"]
 
@@ -155,6 +156,7 @@ async def test_native_probe_requires_real_tool_and_web_calls(monkeypatch):
 async def test_native_web_sources_record_search_and_partial_reads(monkeypatch):
     replies = [response("read_material", {"key": "xhs|one", "section": "body", "index": 0}), response("search_web", {"query": "路线"}),
         response("read_webpage", {"url": "https://example.org"}),
+        response("read_material", {"key": "W1", "section": "body", "index": 1}),
         response("submit_result", {"sections": [*result()["sections"], {"kind": "web", "title": "补充", "paragraphs": [{"text": "外部", "sources": ["web|1"]}]}]})]
     async def completion(*args):
         return replies.pop(0)
@@ -166,8 +168,8 @@ async def test_native_web_sources_record_search_and_partial_reads(monkeypatch):
     monkeypatch.setattr(module, "search_public", search)
     monkeypatch.setattr(module, "public_get", read)
     output = await module.run_openai(payload(web_enabled=True), lambda event: None)
-    assert output["external_sources"][0]["level"] == "网页正文（部分已读）"
-    assert output["external_sources"][0]["read_chunks"] == [0]
+    assert output["external_sources"][0]["level"] == "网页正文"
+    assert output["external_sources"][0]["read_chunks"] == [0, 1]
 
 
 @pytest.mark.asyncio
@@ -226,12 +228,14 @@ async def test_plain_research_links_to_read_evidence_and_keeps_gaps_outside_answ
     row["body"]["text"] = "渡轮八点出发。" + "路线细节" * 4000
     row["comments"] = component("failed", reason="评论访问受限")
     replies = [response("read_material", {"key": "xhs|one", "section": "body", "index": 0}),
-               response(content="资料记录渡轮八点出发 **[S1]**。据此推断，需要更早到码头；余下细节和评论尚未核实。")]
+               response("read_material", {"key": "S1", "section": "body", "index": 1}),
+               response("read_material", {"key": "S1", "section": "body", "index": 2}),
+               response(content="资料记录渡轮八点出发 **[S1]**。据此推断，需要更早到码头。")]
     async def completion(client, data, messages, tools):
         context = json.loads(messages[1]["content"])
         assert context["manifest"][0]["url"] == row["url"]
         assert context["manifest"][0]["sections"]["comments"]["state"] == "failed"
-        if len(replies) == 1:
+        if len(replies) == 3:
             evidence = json.loads(messages[-1]["content"])
             assert evidence["citation"] == "S1" and "渡轮八点出发" in evidence["text"]
         return replies.pop(0)
@@ -240,9 +244,9 @@ async def test_plain_research_links_to_read_evidence_and_keeps_gaps_outside_answ
     encoded = json.dumps(output["document"], ensure_ascii=False)
     assert "正文已读" not in encoded and "评论访问受限" not in encoded and "未覆盖全部分段" not in encoded
     assert "href" in encoded and row["url"] in encoded
-    assert output["coverage"][0]["sections"]["body"]["read_chunks"] == 1
+    assert output["coverage"][0]["sections"]["body"]["reading_complete"]
     assert output["coverage"][0]["sections"]["comments"]["reason"] == "评论访问受限"
-    assert not output["coverage"][0]["complete"]
+    assert output["coverage"][0]["complete"]
     assert "**" not in json.dumps(output["document"], ensure_ascii=False)
     assert "[S1]" in json.dumps(output["document"], ensure_ascii=False)
 
@@ -269,6 +273,7 @@ async def test_plain_citations_repair_unread_followup_once_and_reject_invention(
 async def test_plain_web_citations_distinguish_search_partial_and_full_text(monkeypatch):
     replies = [response("search_web", {"query": "时刻表"}), response(content="搜索结果摘要显示班次 [W1]。"),
                response("read_webpage", {"url": "https://example.org"}), response(content="网页第一段 [W1]。"),
+               response("read_material", {"key": "W1", "section": "body", "index": 1}), response(content="已补读完整网页 [W1]。"),
                response("read_webpage", {"url": "https://example.org"}), response("read_material", {"key": "web|1", "section": "body", "index": 1}),
                response(content="网页完整正文 [W1]。")]
     async def completion(*args):
@@ -280,8 +285,8 @@ async def test_plain_web_citations_distinguish_search_partial_and_full_text(monk
     monkeypatch.setattr(module, "completion", completion)
     monkeypatch.setattr(module, "search_public", search)
     monkeypatch.setattr(module, "public_get", read)
-    for expected in ("仅搜索摘要", "网页正文（部分已读）", "网页正文"):
-        output = await module.run_openai(payload(web_enabled=True), lambda _: None)
+    for expected in ("仅搜索摘要", "网页正文", "网页正文"):
+        output = await module.run_openai(payload(web_enabled=True, materials=[]), lambda _: None)
         assert output["external_sources"][0]["level"] == expected
         assert expected not in json.dumps(output["document"], ensure_ascii=False)
         assert "href" in json.dumps(output["document"])
@@ -301,28 +306,33 @@ async def test_context_compaction_preserves_read_evidence_and_usage(monkeypatch,
     row["body"] = component("ok", text="价格 120 元，敏感肌需先试用。" * 600)
     captured, events = [], []
     failed_once = False
+    read_indices = set()
     async def completion(client, data, messages, tools):
         nonlocal failed_once
         captured.append(copy.deepcopy(messages))
         if data.get("output_tokens"):
             assert not tools and "120 元" in messages[-1]["content"]
             return response(content="价格 120 元，敏感肌需先试用。[S1:body]（部分正文）")
-        if not any(message["role"] == "tool" for message in messages) and not any("evidence_summary" in message.get("content", "") for message in messages):
+        if not read_indices:
+            read_indices.add(0)
             return response("read_material", {"key": "S1", "section": "body", "index": 0}, reasoning_content="private-reasoning")
         if provider_limit and not failed_once:
             failed_once = True
             raise module.ContextLimitError("上下文不足")
         assert any("evidence_summary" in message.get("content", "") for message in messages)
-        assert not any(message["role"] == "tool" or message.get("tool_calls") for message in messages)
         assert "private-reasoning" not in json.dumps(messages)
+        if 1 not in read_indices:
+            assert not any(message["role"] == "tool" or message.get("tool_calls") for message in messages)
+            read_indices.add(1)
+            return response("read_material", {"key": "S1", "section": "body", "index": 1})
         return response(content="价格为 120 元，敏感肌先试用。[S1:body]")
     monkeypatch.setattr(module, "completion", completion)
     monkeypatch.setattr(module, "CONTEXT_SOFT_LIMIT", 999999 if provider_limit else 6000)
     output = await module.run_openai(payload(materials=[row]), events.append)
     assert "120 元" in json.dumps(output["document"], ensure_ascii=False)
-    assert output["coverage"][0]["read_chunks"] == 1
-    assert not output["coverage"][0]["complete"]
-    assert [event for event in events if event["type"] == "usage"][-1]["usage"]["total_tokens"] == 36
+    assert output["coverage"][0]["read_chunks"] == 2
+    assert output["coverage"][0]["complete"]
+    assert [event for event in events if event["type"] == "usage"][-1]["usage"]["total_tokens"] == 12 * (len(captured) - int(provider_limit))
     assert any(event.get("tool") == "context_compaction" and event["status"] == "completed" for event in events)
 
 
@@ -361,13 +371,14 @@ async def test_compaction_falls_back_to_excerpt_when_summary_input_is_rejected(m
     monkeypatch.setenv("SIYE_RESEARCH_API_KEY", "isolated-key")
     row = source()
     row["body"] = component("ok", text="价格 120 元，敏感肌需先试用。" * 600)
-    events, state = [], {"read": False}
+    events, state = [], {"read": 0}
     async def completion(client, data, messages, tools):
         if data.get("output_tokens"):
             raise module.ContextLimitError("上下文不足")
-        if not state["read"]:
-            state["read"] = True
-            return response("read_material", {"key": "S1", "section": "body", "index": 0})
+        if state["read"] < 2:
+            index = state["read"]
+            state["read"] += 1
+            return response("read_material", {"key": "S1", "section": "body", "index": index})
         return response(content="价格为 120 元。[S1:body]")
     monkeypatch.setattr(module, "completion", completion)
     monkeypatch.setattr(module, "CONTEXT_SOFT_LIMIT", 6000)

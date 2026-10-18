@@ -162,7 +162,10 @@ async def test_enabled_web_tracks_search_and_partial_page_separately(monkeypatch
             post = self.options.hooks["PostToolUse"][0].hooks[0]
             search_context = await post({"tool_name": "WebSearch", "tool_response": {"results": [{"url": "https://example.com/search-only"}]}}, None, None)
             assert json.loads(search_context["hookSpecificOutput"]["additionalContext"])["external"][0]["citation"] == "W1"
-            await functions["read_webpage"]({"url": "https://example.com/page"})
+            page = json.loads((await functions["read_webpage"]({"url": "https://example.com/page"}))["content"][0]["text"])
+            assert page["level"] == "网页正文（部分已读）"
+            for index in range(1, page["chunks"]):
+                await functions["read_material"]({"key": "W2", "section": "body", "index": index})
             yield sdk.ResultMessage("success", 1, 1, False, 1, "test", structured_output=note_result("web|2", "web"))
     monkeypatch.setattr(sdk, "ClaudeSDKClient", Client)
     item = material(source())
@@ -171,7 +174,7 @@ async def test_enabled_web_tracks_search_and_partial_page_separately(monkeypatch
         "workdir": str(tmp_path), "model": "test", "base_url": "https://example.com", "space_name": "攻略", "description": ""}, lambda event: None)
     assert result["coverage"][0]["complete"]
     assert result["external_sources"][0]["level"] == "仅搜索摘要"
-    assert result["external_sources"][1]["level"] == "网页正文（部分已读）"
+    assert result["external_sources"][1]["level"] == "网页正文"
     assert "联网补充" not in json.dumps(result["document"], ensure_ascii=False)
     assert "href" in json.dumps(result["document"])
 

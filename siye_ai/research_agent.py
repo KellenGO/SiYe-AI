@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone
 
 from .runtime import agent_cli_path
-from .research_documents import CHUNK_SIZE, MaterialAccess, ReadLoopGuard, RESEARCH_INSTRUCTIONS, SourceReferenceError, ToolInputError, ToolActivity, answer_document, model_external, read_material_section, research_context, result_document
+from .research_documents import CHUNK_SIZE, MaterialAccess, ReadLoopGuard, ReadingCompletionGuard, IncompleteReadingError, RESEARCH_INSTRUCTIONS, SourceReferenceError, ToolInputError, ToolActivity, answer_document, model_external, read_material_section, research_context, result_document
 from .research_web import page_text, public_get, public_target
 
 async def run_agent(payload, emit):
@@ -25,6 +25,7 @@ async def run_agent(payload, emit):
     activity = ToolActivity(emit)
     active_tools = {}
     read_guard = ReadLoopGuard()
+    completion_guard = ReadingCompletionGuard()
 
     def text_result(value):
         return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}]}
@@ -168,8 +169,9 @@ async def run_agent(payload, emit):
             prompt += "必须再用 WebSearch 搜索 Anthropic 官方文档，并调用 read_webpage 读取 https://example.com，然后返回 OK。"
     else:
         prompt = research_context(payload, access)
+    citation_repaired = False
     async with ClaudeSDKClient(options=options) as client:
-        for attempt in range(1 if probe else 2):
+        for _ in range(1 if probe else 8):
             output, answer = None, ""
             await client.query(prompt)
             async for message in client.receive_response():
@@ -201,11 +203,17 @@ async def run_agent(payload, emit):
             try:
                 document = (result_document(output, list(access.materials.values()), list(external.values()), coverage, web_enabled)
                     if output is not None else answer_document(answer, web_enabled, list(access.materials.values()), list(external.values()), coverage))
+                completion_guard.check(access, external, stopped=read_guard.exhausted)
                 return {"document": document, "coverage": coverage, "external_sources": list(external.values()), "web_errors": web_errors}
-            except SourceReferenceError as error:
-                if attempt:
-                    raise
+            except IncompleteReadingError as error:
                 prompt = str(error)
+                emit({"type": "progress", "phase": "analyzing", "message": f"正在补读尚未读完的资料（剩余 {error.result['remaining_chunks']} 段）"})
+            except SourceReferenceError as error:
+                if citation_repaired:
+                    raise
+                citation_repaired = True
+                prompt = str(error)
+    raise ValueError("AI 达到补读轮次上限，请缩小资料范围后重试")
 
 
 def urlsplit_title(url):

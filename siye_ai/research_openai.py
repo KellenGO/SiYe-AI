@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import httpx
 
 from .context_window import window_for
-from .research_documents import CHUNK_SIZE, MaterialAccess, ReadLoopGuard, RESEARCH_INSTRUCTIONS, RESULT_SCHEMA, SourceReferenceError, ToolInputError, ToolActivity, answer_document, model_external, public_url, read_material_section, research_context, result_document
+from .research_documents import CHUNK_SIZE, MaterialAccess, ReadLoopGuard, ReadingCompletionGuard, IncompleteReadingError, ReadingCompletionError, RESEARCH_INSTRUCTIONS, RESULT_SCHEMA, SourceReferenceError, ToolInputError, ToolActivity, answer_document, model_external, public_url, read_material_section, research_context, result_document
 from .research_web import page_text, public_get, search_public
 
 # None 表示按模型窗口计算；测试可以直接覆盖这两个值来固定预算。
@@ -196,6 +196,7 @@ async def run_openai(payload, emit):
     checked, searched, fetched = False, False, False
     activity = ToolActivity(emit)
     read_guard = ReadLoopGuard()
+    completion_guard = ReadingCompletionGuard()
     submit_failures = 0
     delta = DeltaBuffer(emit) if payload.get("stream") else None
     tools = [function("check_connection", "验证工具调用后再回复 OK")] if probe else [
@@ -315,6 +316,7 @@ async def run_openai(payload, emit):
         coverage = access.coverage()
         document = (answer_document(text, web, list(access.materials.values()), list(external.values()), coverage) if text is not None else
                     result_document(output, list(access.materials.values()), list(external.values()), coverage, web))
+        completion_guard.check(access, external, stopped=not tools)
         return {"document": document, "coverage": coverage, "external_sources": list(external.values()), "web_errors": web_errors}
 
     async with httpx.AsyncClient(timeout=120, trust_env=False, follow_redirects=False) as client:
@@ -375,6 +377,12 @@ async def run_openai(payload, emit):
                     output = None
                 try:
                     return finish(output) if isinstance(output, dict) and "sections" in output else finish(text=text)
+                except IncompleteReadingError as error:
+                    if delta:
+                        emit({"type": "delta_reset"})
+                    emit({"type": "progress", "phase": "analyzing", "message": f"正在补读尚未读完的资料（剩余 {error.result['remaining_chunks']} 段）"})
+                    messages.append({"role": "user", "content": str(error)})
+                    continue
                 except SourceReferenceError as error:
                     if citation_repaired:
                         raise
@@ -464,6 +472,12 @@ async def run_openai(payload, emit):
                         output = finish(args)
                         activity.finish(step, tool_name, label, "结果已提交")
                         return output
+                except IncompleteReadingError as error:
+                    result = error.result
+                    summary = f"尚有 {result['remaining_chunks']} 段必读内容，继续补读"
+                except ReadingCompletionError:
+                    activity.finish(step, tool_name, label, "必读内容未完成，停止提前结束", failed=True)
+                    raise
                 except (ValueError, KeyError, TypeError) as error:
                     # Never reflect provider arguments, source text or credentials in logs/errors.
                     if name == "submit_result":
