@@ -1,14 +1,17 @@
 import { createElement, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUp, BookOpen, Captions, Check, ChevronDown, Columns2, Globe, History, LoaderCircle, Maximize2, MessageSquare, Minimize2, NotebookPen, Plus, Search, Sparkles, Square, Terminal, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowUp, BookOpen, Captions, Check, ChevronDown, Columns2, Globe, History, LoaderCircle, Maximize2, MessageSquare, Minimize2, NotebookPen, Plus, Search, Sparkles, Square, Terminal, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import * as api from "./researchApi";
 import { citedSources, platformLabel, readingSummary, referenceOf, sectionReading, sourceIndex, transcriptDuration, type SourceEntry } from "./researchPresentation";
 import { numberingFor, partialDocument } from "./partial";
+import { providerOf } from "./models";
 import { spaceError } from "siye-host";
 import type { NoteDocument, NoteBridge } from "./contract";
 import type { WorkspaceSplitLayout } from "./contract";
+
+const SESSIONS_WIDTH = 300;
 
 function renderChildren(nodes: NoteDocument[] | undefined, sources: Record<string, SourceEntry>, numbering: Record<string, string>, key: string): ReactNode[] {
   const list = nodes ?? [];
@@ -123,6 +126,10 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
   const sessionsOpen = split.active ? split.historyOpen : dockedSessionsOpen;
   const setSessionsOpen = split.active ? split.setHistoryOpen : setDockedSessionsOpen;
   const [sessionSearch, setSessionSearch] = useState("");
+  const [sessionTab, setSessionTab] = useState<"recent" | "archived">("recent");
+  const [modelOpen, setModelOpen] = useState(false);
+  const [modelName, setModelName] = useState("");
+  const modelBox = useRef<HTMLDivElement>(null);
   const [question, setQuestion] = useState("");
   const [web, setWeb] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -154,7 +161,9 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     return () => { media.removeEventListener("change", update); window.removeEventListener("resize", resize); };
   }, []);
   const minimumWidth = 360;
-  const panelWidth = split.active ? viewportWidth - split.noteWidth : narrow || expanded ? viewportWidth : Math.min(Math.max(width, minimumWidth), viewportWidth);
+  const docked = sessionsOpen && !narrow;
+  const chatWidth = split.active ? viewportWidth - split.noteWidth : narrow || expanded ? viewportWidth : Math.min(Math.max(width, minimumWidth), viewportWidth);
+  const panelWidth = Math.min(chatWidth + (docked ? SESSIONS_WIDTH : 0), viewportWidth);
   const fullscreen = !split.active && !narrow && panelWidth === viewportWidth;
   useEffect(() => {
     if (!open) return;
@@ -174,6 +183,14 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     element.style.height = "auto";
     element.style.height = `${Math.min(element.scrollHeight, 200)}px`;
   }, [question, open]);
+  useEffect(() => {
+    if (!modelOpen) return;
+    const close = (event: PointerEvent) => {
+      if (modelBox.current && !modelBox.current.contains(event.target as Node)) setModelOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [modelOpen]);
   const running = job?.status === "collecting" || job?.status === "analyzing";
   const locked = busy || running || job?.status === "awaiting_sources";
   const [clock, setClock] = useState(0);
@@ -243,6 +260,18 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     setTurns(history); setJob(history[history.length - 1] ?? null); setInitialized(true); setQuestion("");
     if (narrow) setSessionsOpen(false);
   });
+  const toggleArchive = (row: api.ResearchConversation) => run(async () => {
+    await api.archiveResearchConversation(spaceId, row.id, !row.archived);
+    await conversations.refetch();
+  });
+  const switchModel = (model: string) => run(async () => {
+    const current = config.data;
+    if (!current || current.model === model) { setModelOpen(false); return; }
+    await api.saveResearchConfig(current.base_url, model, undefined, current.protocol);
+    await config.refetch();
+    setModelOpen(false);
+    setModelName("");
+  });
   const append = (result: api.ResearchJob) => run(async () => {
     if (!result.document || note.hasSavedResearch(result.job_id) || wasApplied(result.job_id)) return;
     await note.append(result.job_id, result.document);
@@ -255,6 +284,15 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     void run(async () => { await updateJob(() => api.researchAction(job.job_id, "generate")); });
   }, [open, job?.job_id, job?.status, archived, busy]);
   const displayed = job ? [...turns.filter((row) => row.job_id !== job.job_id), job] : [];
+  const provider = config.data ? providerOf(config.data.base_url) : undefined;
+  const modelService = provider?.name ?? (() => {
+    try { return new URL(config.data?.base_url ?? "").hostname; } catch { return label("research.customService", "自定义服务"); }
+  })();
+  const modelOptions = Array.from(new Set([...(config.data?.model ? [config.data.model] : []), ...(provider?.models ?? [])]));
+  const recentSessions = (conversations.data ?? []).filter((row) => !row.archived);
+  const archivedSessions = (conversations.data ?? []).filter((row) => row.archived);
+  const visibleSessions = (sessionTab === "archived" ? archivedSessions : recentSessions)
+    .filter((row) => row.title.toLocaleLowerCase().includes(sessionSearch.toLocaleLowerCase()));
   const send = () => { if (!pending.current) void start(); };
   const sendDisabled = (sourceCount === 0 && job?.status !== "ready") || archived || busy || !initialized || !config.data?.has_key || !preference.data || !question.trim();
   const cancel = () => run(async () => { if (job) await updateJob(() => api.researchAction(job.job_id, "cancel")); });
@@ -267,7 +305,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
       }
     } else { setExpanded(true); setSessionsOpen(true); }
   };
-  return createPortal(<dialog ref={dialog} className={`space-research-dialog${fullscreen ? " is-expanded" : ""}${split.active ? " is-split" : ""}`} aria-labelledby={titleId}
+  return createPortal(<dialog ref={dialog} className={`space-research-dialog${fullscreen ? " is-expanded" : ""}${split.active ? " is-split" : ""}${docked ? " has-sessions" : ""}`} aria-labelledby={titleId}
     onCancel={(event) => { event.preventDefault(); onClose(); }}
     onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (sessionsOpen) setSessionsOpen(false); else if (split.active) split.restore(); else onClose(); } }}>
     {!narrow && <div className="research-resize-handle" role="separator" tabIndex={0} aria-orientation="vertical" aria-label={t(split.active ? "spaces.resizeSplit" : "research.resizePanel")} title={split.active ? t("spaces.resizeSplitHint") : undefined} aria-valuemin={split.active ? 360 : minimumWidth} aria-valuemax={split.active ? viewportWidth - 360 : viewportWidth} aria-valuenow={split.active ? split.noteWidth : panelWidth}
@@ -373,7 +411,25 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
         <div className="research-input-card">
           <textarea ref={composer} aria-label={t("research.messageInput")} rows={1} maxLength={2000} value={question} placeholder={t("research.messagePlaceholder")} disabled={!!locked || archived} onChange={(event) => setQuestion(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing && !locked && !sendDisabled) { event.preventDefault(); send(); } }} />
-          <div className="research-input-tools"><span className="research-model-label" title={config.data?.model}>{config.data?.model || t("research.noModel")}</span>
+          <div className="research-input-tools">
+            <div className="research-model" ref={modelBox}>
+              <button type="button" className="research-model-label" title={config.data?.base_url} aria-haspopup="menu" aria-expanded={modelOpen}
+                disabled={!!locked || !config.data?.has_key} onClick={() => setModelOpen((value) => !value)}>
+                <span>{config.data?.model || t("research.noModel")}</span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+              {modelOpen && <div className="research-model-menu" role="menu">
+                <p className="research-model-service">{modelService}</p>
+                {modelOptions.map((name) => <button type="button" role="menuitemradio" aria-checked={config.data?.model === name} key={name} className="research-model-option" onClick={() => void switchModel(name)}>
+                  <span>{name}</span>{config.data?.model === name && <Check aria-hidden="true" />}
+                </button>)}
+                <form className="research-model-custom" onSubmit={(event) => { event.preventDefault(); if (modelName.trim()) void switchModel(modelName.trim()); }}>
+                  <input aria-label={label("research.customModel", "自定义模型名")} value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder={label("research.customModel", "自定义模型名")} />
+                  <button type="submit" disabled={!modelName.trim() || busy}>{label("research.applyModel", "切换")}</button>
+                </form>
+                <a className="research-model-link" href="#/settings/ai">{label("research.modelSettings", "打开模型设置")}</a>
+              </div>}
+            </div>
             <label className="research-web-toggle" title={t(web ? "research.webHint" : "research.localHint")}><input type="checkbox" aria-label={t("research.allowWeb")} checked={web} disabled={busy || !preference.data} onChange={(event) => {
               const enabled = event.target.checked; setWeb(enabled);
               void run(async () => { try { await api.saveWebPreference(spaceId, enabled); } catch (cause) { setWeb(!enabled); throw cause; } });
@@ -386,12 +442,31 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
       </div>
     </section>
       {sessionsOpen && <>
-        <div className="research-sessions-scrim" aria-hidden="true" onClick={() => setSessionsOpen(false)} />
-        <aside className="research-sessions" aria-label={t("research.history")}>
+        {!docked && <div className="research-sessions-scrim" aria-hidden="true" onClick={() => setSessionsOpen(false)} />}
+        <aside className={`research-sessions ${docked ? "is-docked" : "is-overlay"}`} aria-label={t("research.history")}>
           <div className="research-sessions-head"><h3>{t("research.history")}</h3><button type="button" className="research-icon-button" aria-label={t("research.closeHistory")} onClick={() => setSessionsOpen(false)}><X aria-hidden="true" /></button></div>
           <button type="button" className="research-session-new" disabled={!!locked || !initialized} onClick={newConversation}><Plus aria-hidden="true" />{t("research.newConversation")}</button>
           <label className="research-session-search"><Search aria-hidden="true" /><input aria-label={t("research.searchHistory")} value={sessionSearch} onChange={(event) => setSessionSearch(event.target.value)} placeholder={t("research.searchHistory")} /></label>
-          <div className="research-session-list">{conversations.data?.filter((row) => row.title.toLocaleLowerCase().includes(sessionSearch.toLocaleLowerCase())).map((row) => <button type="button" key={row.id} className={job?.conversation_id === row.id ? "is-active" : ""} aria-pressed={job?.conversation_id === row.id} disabled={!!locked || !initialized} onClick={() => void switchConversation(row.id)}><MessageSquare aria-hidden="true" /><span>{row.title}<small>{t("research.conversationTurns", { count: row.turns })}</small></span></button>)}</div>
+          <div className="research-session-tabs" role="tablist">
+            {(["recent", "archived"] as const).map((tab) => <button type="button" role="tab" key={tab} aria-selected={sessionTab === tab}
+              className={sessionTab === tab ? "is-active" : ""} onClick={() => setSessionTab(tab)}>
+              {label(`research.tab.${tab}`, tab === "recent" ? "最近" : "已归档")}
+              <span>{tab === "recent" ? recentSessions.length : archivedSessions.length}</span>
+            </button>)}
+          </div>
+          <div className="research-session-list">
+            {visibleSessions.length === 0
+              ? <p className="research-session-empty">{label(sessionTab === "archived" ? "research.emptyArchived" : "research.emptyRecent", sessionTab === "archived" ? "还没有归档的会话" : "还没有会话")}</p>
+              : visibleSessions.map((row) => <div className={`research-session-item${job?.conversation_id === row.id ? " is-active" : ""}`} key={row.id}>
+                <button type="button" className="research-session-open" aria-pressed={job?.conversation_id === row.id} disabled={!!locked || !initialized} onClick={() => void switchConversation(row.id)}>
+                  <MessageSquare aria-hidden="true" /><span>{row.title}<small>{t("research.conversationTurns", { count: row.turns })}</small></span>
+                </button>
+                <button type="button" className="research-session-archive" disabled={!!locked || !initialized}
+                  title={label(row.archived ? "research.unarchive" : "research.archive", row.archived ? "取消归档" : "归档")}
+                  aria-label={label(row.archived ? "research.unarchive" : "research.archive", row.archived ? "取消归档" : "归档")}
+                  onClick={() => void toggleArchive(row)}>{row.archived ? <ArchiveRestore aria-hidden="true" /> : <Archive aria-hidden="true" />}</button>
+              </div>)}
+          </div>
           <p className="space-research-hint">{t("research.historyHint")}</p>
         </aside>
       </>}

@@ -2,13 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import * as api from "./researchApi";
+import { PROVIDERS } from "./models";
 import { spaceError } from "siye-host";
-
-const PROVIDERS = [
-  { id: "deepseek", name: "DeepSeek", url: "https://api.deepseek.com", model: "deepseek-flash" },
-  { id: "gemini", name: "Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-3.8-flash" },
-  { id: "openai", name: "OpenAI", url: "https://api.openai.com/v1", model: "" },
-];
 
 export function ResearchSettings() {
   const { t } = useTranslation();
@@ -43,7 +38,7 @@ export function ResearchSettings() {
         const next = PROVIDERS.find((row) => row.id === event.target.value);
         setProvider(event.target.value); setKey("");
         setProtocol(event.target.value === "anthropic" ? "anthropic" : "openai");
-        if (next) { setBaseUrl(next.url); setModel(next.model); } else if (event.target.value === "anthropic") { setBaseUrl("https://api.anthropic.com"); setModel(""); }
+        if (next) { setBaseUrl(next.url); setModel(next.models[0] ?? ""); } else if (event.target.value === "anthropic") { setBaseUrl("https://api.anthropic.com"); setModel(""); }
       }}>
         {PROVIDERS.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
         <option value="custom">{t("research.customProvider")}</option><option value="anthropic">{t("research.legacyProvider")}</option>

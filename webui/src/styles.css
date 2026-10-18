@@ -45,11 +45,14 @@
 .space-research-dialog::backdrop { background: color-mix(in srgb, var(--sr-ink) 18%, transparent); }
 .space-research-dialog.is-split { box-shadow: none; }
 .space-research-dialog.is-expanded { width: 100vw; border-left: 0; }
+.space-research-dialog[open] { display: flex; }
 
 .space-research-dialog .space-research {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
   min-height: 0;
   background: var(--sr-panel);
 }
@@ -549,22 +552,91 @@
 .space-research-dialog .research-input-card textarea:disabled { color: var(--sr-faint); }
 
 .space-research-dialog .research-input-tools { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+.space-research-dialog .research-model { position: relative; display: inline-flex; max-width: 46%; }
 .space-research-dialog .research-model-label {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   height: 24px;
-  padding: 0 8px;
+  min-width: 0;
+  padding: 0 7px;
   border-radius: 7px;
   border: 1px solid var(--sr-line);
+  background: transparent;
   color: var(--sr-quiet);
   font-size: 11px;
   font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  max-width: 42%;
+  cursor: pointer;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
+.space-research-dialog .research-model-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-research-dialog .research-model-label svg { width: 11px; height: 11px; flex: none; opacity: 0.7; }
+.space-research-dialog .research-model-label:hover:not(:disabled) { border-color: var(--sr-line-strong); color: var(--sr-body); }
+.space-research-dialog .research-model-label[aria-expanded="true"] { background: var(--sr-accent-wash); border-color: color-mix(in srgb, var(--sr-accent) 30%, var(--sr-line)); color: var(--sr-accent); }
+.space-research-dialog .research-model-label:disabled { cursor: default; color: var(--sr-faint); }
+.space-research-dialog .research-model-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 6;
+  width: 250px;
+  padding: 6px;
+  border: 1px solid var(--sr-line-strong);
+  border-radius: 10px;
+  background: var(--sr-panel);
+  box-shadow: 0 14px 32px -20px color-mix(in srgb, var(--sr-ink) 50%, transparent);
+  animation: sr-fade 0.14s ease both;
+}
+.space-research-dialog .research-model-service { margin: 3px 7px 7px; font-size: 10px; letter-spacing: 0.05em; color: var(--sr-faint); text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-research-dialog .research-model-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sr-body);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.space-research-dialog .research-model-option:hover { background: color-mix(in srgb, var(--sr-ink) 5%, transparent); }
+.space-research-dialog .research-model-option[aria-checked="true"] { color: var(--sr-accent); }
+.space-research-dialog .research-model-option svg { width: 12px; height: 12px; }
+.space-research-dialog .research-model-custom { display: flex; gap: 4px; margin: 7px 4px 2px; }
+.space-research-dialog .research-model-custom input {
+  flex: 1;
+  min-width: 0;
+  height: 27px;
+  padding: 0 8px;
+  border: 1px solid var(--sr-line);
+  border-radius: 7px;
+  background: var(--sr-panel);
+  color: var(--sr-ink);
+  font-family: inherit;
+  font-size: 11.5px;
+  outline: none;
+}
+.space-research-dialog .research-model-custom input:focus { border-color: color-mix(in srgb, var(--sr-accent) 45%, var(--sr-line)); }
+.space-research-dialog .research-model-custom button {
+  height: 27px;
+  padding: 0 9px;
+  border: 1px solid var(--sr-line-strong);
+  border-radius: 7px;
+  background: var(--sr-panel);
+  color: var(--sr-body);
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.space-research-dialog .research-model-custom button:disabled { opacity: 0.45; cursor: default; }
+.space-research-dialog .research-model-link { display: block; margin: 7px 5px 2px; padding-top: 7px; border-top: 1px solid var(--sr-line); color: var(--sr-accent); font-size: 11px; text-decoration: none; }
+.space-research-dialog .research-model-link:hover { text-decoration: underline; }
 .space-research-dialog .research-web-toggle {
   display: inline-flex;
   align-items: center;
@@ -606,7 +678,7 @@
 
 .space-research-dialog .research-input-hint { margin: 8px 2px 0; font-size: 10.5px; color: var(--sr-faint); text-align: right; letter-spacing: 0.01em; }
 
-/* 历史抽屉 */
+/* 会话列表：桌面停靠在右侧并挤压对话，窄屏才改为浮层 */
 .space-research-dialog .research-sessions-scrim {
   position: absolute;
   inset: 0;
@@ -615,16 +687,24 @@
   animation: sr-fade 0.16s ease both;
 }
 .space-research-dialog .research-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 100%;
+  min-height: 0;
+  padding: 14px 12px;
+  background: var(--sr-paper);
+  border-left: 1px solid var(--sr-line-strong);
+}
+.space-research-dialog .research-sessions.is-docked { position: relative; flex: 0 0 300px; width: 300px; }
+.space-research-dialog .research-sessions.is-overlay {
   position: absolute;
   top: 0;
   left: 0;
   bottom: 0;
   z-index: 3;
-  display: flex;
-  flex-direction: column;
-  width: 288px;
-  padding: 16px 14px;
-  background: var(--sr-paper);
+  width: min(86%, 300px);
+  border-left: 0;
   border-right: 1px solid var(--sr-line-strong);
   box-shadow: 14px 0 34px -26px color-mix(in srgb, var(--sr-ink) 28%, transparent);
   animation: sr-slide 0.18s ease both;
@@ -662,8 +742,34 @@
 }
 .space-research-dialog .research-session-search svg { width: 12px; height: 12px; flex: none; }
 .space-research-dialog .research-session-search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font-family: inherit; font-size: 12px; color: var(--sr-body); }
-.space-research-dialog .research-session-list { display: flex; flex-direction: column; gap: 1px; overflow-y: auto; margin: 0 -4px; padding: 0 4px 4px; }
-.space-research-dialog .research-session-list button {
+.space-research-dialog .research-session-tabs { display: flex; gap: 2px; padding: 2px; margin: 2px 0 6px; border-radius: 8px; background: var(--sr-wash); }
+.space-research-dialog .research-session-tabs button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sr-quiet);
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.space-research-dialog .research-session-tabs button span { font-size: 10px; color: var(--sr-faint); font-variant-numeric: tabular-nums; }
+.space-research-dialog .research-session-tabs button.is-active { background: var(--sr-panel); color: var(--sr-ink); box-shadow: 0 1px 2px color-mix(in srgb, var(--sr-ink) 8%, transparent); }
+.space-research-dialog .research-session-tabs button.is-active span { color: var(--sr-quiet); }
+
+.space-research-dialog .research-session-list { display: flex; flex-direction: column; gap: 1px; overflow-y: auto; margin: 0 -4px; padding: 0 4px 4px; min-height: 0; }
+.space-research-dialog .research-session-empty { margin: 12px 4px; font-size: 11.5px; color: var(--sr-faint); text-align: center; }
+.space-research-dialog .research-session-item { display: flex; align-items: center; border-radius: 8px; }
+.space-research-dialog .research-session-item:hover { background: color-mix(in srgb, var(--sr-ink) 4.5%, transparent); }
+.space-research-dialog .research-session-item.is-active { background: var(--sr-panel); box-shadow: inset 0 0 0 1px var(--sr-line); }
+.space-research-dialog .research-session-open {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -676,17 +782,38 @@
   color: var(--sr-body);
   font-family: inherit;
 }
-.space-research-dialog .research-session-list button:hover:not(:disabled) { background: color-mix(in srgb, var(--sr-ink) 4.5%, transparent); }
-.space-research-dialog .research-session-list button.is-active { background: var(--sr-panel); box-shadow: inset 0 0 0 1px var(--sr-line); }
-.space-research-dialog .research-session-list button svg { width: 12px; height: 12px; margin-top: 3px; flex: none; color: var(--sr-faint); }
-.space-research-dialog .research-session-list button span { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; line-height: 1.5; min-width: 0; }
-.space-research-dialog .research-session-list button small { font-size: 10.5px; color: var(--sr-faint); }
-.space-research-dialog .research-sessions > .space-research-hint { margin-top: auto; padding-top: 12px; }
+.space-research-dialog .research-session-open:disabled { cursor: default; }
+.space-research-dialog .research-session-open svg { width: 12px; height: 12px; margin-top: 3px; flex: none; color: var(--sr-faint); }
+.space-research-dialog .research-session-open span { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; line-height: 1.5; min-width: 0; }
+.space-research-dialog .research-session-open small { font-size: 10.5px; color: var(--sr-faint); }
+.space-research-dialog .research-session-archive {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sr-faint);
+  cursor: pointer;
+  opacity: 0.32;
+  transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+.space-research-dialog .research-session-item:hover .research-session-archive,
+.space-research-dialog .research-session-item.is-active .research-session-archive,
+.space-research-dialog .research-session-archive:focus-visible { opacity: 1; }
+.space-research-dialog .research-session-archive:hover:not(:disabled) { background: color-mix(in srgb, var(--sr-ink) 8%, transparent); color: var(--sr-body); }
+.space-research-dialog .research-session-archive:disabled { cursor: default; opacity: 0; }
+.space-research-dialog .research-session-archive svg { width: 13px; height: 13px; }
+.space-research-dialog .research-sessions > .space-research-hint { margin-top: auto; padding-top: 10px; }
 
 /* 窄屏与分屏 */
 @media (max-width: 720px) {
   .space-research-dialog { border-left: 0; }
   .space-research-dialog .space-research-body { padding: 18px 16px 4px; }
   .space-research-dialog .space-research-footer { padding: 10px 14px 12px; }
-  .space-research-dialog .research-sessions { width: min(86vw, 300px); }
+  .space-research-dialog .research-sessions.is-overlay { width: min(86vw, 300px); }
 }

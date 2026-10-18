@@ -184,9 +184,9 @@ const job: ResearchJob = {
 };
 
 export const conversations: ResearchConversation[] = [
-  { id: "conv-demo-1", title: "来给我总结一下去苏州旅游需要注意哪些点", turns: 1, status: "ready", latest_job_id: "job-demo-1" },
-  { id: "conv-demo-2", title: "对比两条视频对园林取舍的说法", turns: 3, status: "ready", latest_job_id: "job-demo-2" },
-  { id: "conv-demo-3", title: "大闸蟹到底什么时候能吃", turns: 2, status: "ready", latest_job_id: "job-demo-3" },
+  { id: "conv-demo-1", title: "来给我总结一下去苏州旅游需要注意哪些点", turns: 1, status: "ready", latest_job_id: "job-demo-1", archived: false },
+  { id: "conv-demo-2", title: "对比两条视频对园林取舍的说法", turns: 3, status: "ready", latest_job_id: "job-demo-2", archived: false },
+  { id: "conv-demo-3", title: "大闸蟹到底什么时候能吃", turns: 2, status: "ready", latest_job_id: "job-demo-3", archived: true },
 ];
 
 export const latestJob = job;
