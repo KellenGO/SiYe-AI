@@ -24,6 +24,17 @@ function formatTokens(value: number | undefined): string {
   return value >= 1000 ? `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k` : String(Math.round(value));
 }
 
+/** 上下文上限只用于画环，按常见服务的窗口估算；未知服务按 128k 处理。 */
+function contextWindowOf(baseUrl?: string): number {
+  try {
+    const host = new URL(baseUrl ?? "").hostname;
+    if (host.includes("googleapis") || host.includes("generativelanguage")) return 1000000;
+    if (host.includes("openai")) return 400000;
+    if (host.includes("deepseek")) return 128000;
+  } catch { /* fall through */ }
+  return 128000;
+}
+
 function renderChildren(nodes: NoteDocument[] | undefined, sources: Record<string, SourceEntry>, numbering: Record<string, string>, key: string): ReactNode[] {
   const list = nodes ?? [];
   return list.reduce<ReactNode[]>((all, node, index) => {
@@ -141,8 +152,6 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
   const [modelOpen, setModelOpen] = useState(false);
   const [modelName, setModelName] = useState("");
   const modelBox = useRef<HTMLDivElement>(null);
-  const [effortOpen, setEffortOpen] = useState(false);
-  const effortBox = useRef<HTMLDivElement>(null);
   const [question, setQuestion] = useState("");
   const [web, setWeb] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -197,15 +206,13 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     element.style.height = `${Math.min(element.scrollHeight, 200)}px`;
   }, [question, open]);
   useEffect(() => {
-    if (!modelOpen && !effortOpen) return;
+    if (!modelOpen) return;
     const close = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (modelBox.current && !modelBox.current.contains(target)) setModelOpen(false);
-      if (effortBox.current && !effortBox.current.contains(target)) setEffortOpen(false);
+      if (modelBox.current && !modelBox.current.contains(event.target as Node)) setModelOpen(false);
     };
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
-  }, [modelOpen, effortOpen]);
+  }, [modelOpen]);
   const running = job?.status === "collecting" || job?.status === "analyzing";
   const locked = busy || running || job?.status === "awaiting_sources";
   const [clock, setClock] = useState(0);
@@ -289,10 +296,9 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
   });
   const switchEffort = (value: api.ResearchConfig["reasoning_effort"]) => run(async () => {
     const current = config.data;
-    if (!current || current.reasoning_effort === value) { setEffortOpen(false); return; }
+    if (!current || current.reasoning_effort === value) return;
     await api.saveResearchConfig(current.base_url, current.model, undefined, current.protocol, value);
     await config.refetch();
-    setEffortOpen(false);
   });
   const append = (result: api.ResearchJob) => run(async () => {
     if (!result.document || note.hasSavedResearch(result.job_id) || wasApplied(result.job_id)) return;
@@ -311,6 +317,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     try { return new URL(config.data?.base_url ?? "").hostname; } catch { return label("research.customService", "自定义服务"); }
   })();
   const modelOptions = Array.from(new Set([...(config.data?.model ? [config.data.model] : []), ...(provider?.models ?? [])]));
+  const contextLimit = contextWindowOf(config.data?.base_url);
   const recentSessions = (conversations.data ?? []).filter((row) => !row.archived);
   const archivedSessions = (conversations.data ?? []).filter((row) => row.archived);
   const visibleSessions = (sessionTab === "archived" ? archivedSessions : recentSessions)
@@ -438,6 +445,8 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
               <button type="button" className="research-model-label" title={config.data?.base_url} aria-haspopup="menu" aria-expanded={modelOpen}
                 disabled={!!locked || !config.data?.has_key} onClick={() => setModelOpen((value) => !value)}>
                 <span>{config.data?.model || t("research.noModel")}</span>
+                <em>·</em>
+                <b>{EFFORTS.find((row) => row.value === (config.data?.reasoning_effort ?? ""))?.text ?? "默认"}</b>
                 <ChevronDown aria-hidden="true" />
               </button>
               {modelOpen && <div className="research-model-menu" role="menu">
@@ -449,35 +458,35 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
                   <input aria-label={label("research.customModel", "自定义模型名")} value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder={label("research.customModel", "自定义模型名")} />
                   <button type="submit" disabled={!modelName.trim() || busy}>{label("research.applyModel", "切换")}</button>
                 </form>
+                <div className="research-effort-block">
+                  <p className="research-model-service">{label("research.effort", "推理等级")}</p>
+                  <div className="research-effort-seg" role="radiogroup" aria-label={label("research.effort", "推理等级")}>
+                    {EFFORTS.map((row) => <button type="button" role="radio" key={row.value || "default"} aria-checked={(config.data?.reasoning_effort ?? "") === row.value}
+                      className={(config.data?.reasoning_effort ?? "") === row.value ? "is-active" : ""} disabled={busy} onClick={() => void switchEffort(row.value)}>{row.text}</button>)}
+                  </div>
+                  <p className="research-effort-note">{label("research.effortNote", "服务不支持该参数时自动按默认重试。")}</p>
+                </div>
                 <a className="research-model-link" href="#/settings/ai">{label("research.modelSettings", "打开模型设置")}</a>
-              </div>}
-            </div>
-            <div className="research-effort" ref={effortBox}>
-              <button type="button" className="research-effort-label" aria-haspopup="menu" aria-expanded={effortOpen}
-                disabled={!!locked || !config.data?.has_key} onClick={() => setEffortOpen((value) => !value)}>
-                <span>{label("research.effort", "推理")} {EFFORTS.find((row) => row.value === (config.data?.reasoning_effort ?? ""))?.text ?? "默认"}</span>
-                <ChevronDown aria-hidden="true" />
-              </button>
-              {effortOpen && <div className="research-effort-menu" role="menu">
-                {EFFORTS.map((row) => <button type="button" role="menuitemradio" aria-checked={(config.data?.reasoning_effort ?? "") === row.value}
-                  key={row.value || "default"} className="research-effort-option" onClick={() => void switchEffort(row.value)}>
-                  <span>{row.text}</span>{(config.data?.reasoning_effort ?? "") === row.value && <Check aria-hidden="true" />}
-                </button>)}
-                <p className="research-effort-note">{label("research.effortNote", "服务不支持该参数时自动按默认重试。")}</p>
               </div>}
             </div>
             <label className="research-web-toggle" title={t(web ? "research.webHint" : "research.localHint")}><input type="checkbox" aria-label={t("research.allowWeb")} checked={web} disabled={busy || !preference.data} onChange={(event) => {
               const enabled = event.target.checked; setWeb(enabled);
               void run(async () => { try { await api.saveWebPreference(spaceId, enabled); } catch (cause) { setWeb(!enabled); throw cause; } });
             }} /><Globe aria-hidden="true" /><span>{t("research.webShort")}</span></label>
+            <span className="research-tools-spacer" aria-hidden="true" />
+            {!!job?.context_tokens && <span className="research-context" title={`${label("research.context", "上下文")} ${formatTokens(job.context_tokens)} / ${formatTokens(contextLimit)}（估算）`}>
+              <svg viewBox="0 0 38 21" aria-hidden="true">
+                <path className="research-context-track" d="M3 18 A16 16 0 0 1 35 18" />
+                <path className="research-context-value" d="M3 18 A16 16 0 0 1 35 18"
+                  style={{ strokeDasharray: `${Math.min(job.context_tokens / contextLimit, 1) * 50.27} 50.27` }} />
+              </svg>
+              <span>{Math.min(100, Math.round((job.context_tokens / contextLimit) * 100))}%</span>
+            </span>}
             {running || job?.status === "awaiting_sources" ? <button type="button" className="research-send" aria-label={t("research.cancel")} title={t("research.cancel")} disabled={busy} onClick={() => void cancel()}><Square aria-hidden="true" /></button>
               : <button type="button" className="research-send" aria-label={t("research.send")} title={t("research.send")} disabled={sendDisabled} onClick={send}><ArrowUp aria-hidden="true" /></button>}
           </div>
         </div>
-        <div className="research-input-meta">
-          <span>{job?.context_tokens ? `${label("research.context", "上下文")} ${formatTokens(job.context_tokens)} tok` : ""}</span>
-          <span>{t("research.sendShortcut")}</span>
-        </div>
+        <p className="research-input-hint">{t("research.sendShortcut")}</p>
       </div>
     </section>
       {sessionsOpen && <>

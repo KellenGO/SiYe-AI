@@ -87,7 +87,7 @@ export const zh: Record<string, string> = {
   "research.applyModel": "切换",
   "research.modelSettings": "打开模型设置",
   "research.customService": "自定义服务",
-  "research.effort": "推理",
+  "research.effort": "推理等级",
   "research.effortNote": "服务不支持该参数时自动按默认重试。",
   "research.context": "上下文",
 };
