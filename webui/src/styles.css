@@ -637,6 +637,64 @@
 .space-research-dialog .research-model-custom button:disabled { opacity: 0.45; cursor: default; }
 .space-research-dialog .research-model-link { display: block; margin: 7px 5px 2px; padding-top: 7px; border-top: 1px solid var(--sr-line); color: var(--sr-accent); font-size: 11px; text-decoration: none; }
 .space-research-dialog .research-model-link:hover { text-decoration: underline; }
+
+.space-research-dialog .research-effort { position: relative; display: inline-flex; min-width: 0; }
+.space-research-dialog .research-effort-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  min-width: 0;
+  padding: 0 7px;
+  border: 1px solid var(--sr-line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sr-quiet);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.space-research-dialog .research-effort-label span { overflow: hidden; text-overflow: ellipsis; }
+.space-research-dialog .research-effort-label svg { width: 11px; height: 11px; flex: none; opacity: 0.7; }
+.space-research-dialog .research-effort-label:hover:not(:disabled) { border-color: var(--sr-line-strong); color: var(--sr-body); }
+.space-research-dialog .research-effort-label[aria-expanded="true"] { background: var(--sr-accent-wash); border-color: color-mix(in srgb, var(--sr-accent) 30%, var(--sr-line)); color: var(--sr-accent); }
+.space-research-dialog .research-effort-label:disabled { cursor: default; color: var(--sr-faint); }
+.space-research-dialog .research-effort-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 6;
+  width: 196px;
+  padding: 6px;
+  border: 1px solid var(--sr-line-strong);
+  border-radius: 10px;
+  background: var(--sr-panel);
+  box-shadow: 0 14px 32px -20px color-mix(in srgb, var(--sr-ink) 50%, transparent);
+  animation: sr-fade 0.14s ease both;
+}
+.space-research-dialog .research-effort-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sr-body);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.space-research-dialog .research-effort-option:hover { background: color-mix(in srgb, var(--sr-ink) 5%, transparent); }
+.space-research-dialog .research-effort-option[aria-checked="true"] { color: var(--sr-accent); }
+.space-research-dialog .research-effort-option svg { width: 12px; height: 12px; }
+.space-research-dialog .research-effort-note { margin: 6px 5px 2px; padding-top: 6px; border-top: 1px solid var(--sr-line); font-size: 10px; line-height: 1.5; color: var(--sr-faint); }
+
+.space-research-dialog .research-input-meta { display: flex; justify-content: space-between; gap: 8px; margin: 8px 2px 0; font-size: 10.5px; color: var(--sr-faint); }
+.space-research-dialog .research-input-meta span:first-child { font-variant-numeric: tabular-nums; }
 .space-research-dialog .research-web-toggle {
   display: inline-flex;
   align-items: center;

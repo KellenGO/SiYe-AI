@@ -4,6 +4,7 @@ import type { NoteDocument } from "./contract";
 export interface ResearchConfig {
   protocol: "openai" | "anthropic";
   base_url: string; model: string; has_key: boolean; key_mask: string;
+  reasoning_effort: "" | "low" | "medium" | "high";
   runtime: { sdk_available: boolean; cli_available: boolean; sdk_version: string; cli_version: string };
 }
 export interface MaterialComponent {
@@ -24,6 +25,7 @@ export interface ResearchJob {
   total_materials: number;
   document: NoteDocument | null; stale_snapshot?: boolean;
   partial?: string;
+  context_tokens?: number;
   activity?: { id?: string; tool: string; message: string; status?: "running" | "completed" | "failed" | "cancelled"; summary?: string; kind?: "commentary" }[];
   coverage: { key: string; title: string; chunks: number; read_chunks: number; complete: boolean; sections?: Record<"body" | "comments" | "subtitles", SectionCoverage> }[];
   external_sources: { id: string; title: string; url: string; level: string; fetched_at: string }[];
@@ -32,8 +34,8 @@ export interface ResearchJob {
 
 const BASE = "/api/research";
 export async function getResearchConfig(): Promise<ResearchConfig> { return (await axios.get(`${BASE}/config`)).data; }
-export async function saveResearchConfig(base_url: string, model: string, api_key?: string, protocol: ResearchConfig["protocol"] = "openai"): Promise<ResearchConfig> {
-  return (await axios.put(`${BASE}/config`, { base_url, model, api_key, protocol })).data;
+export async function saveResearchConfig(base_url: string, model: string, api_key?: string, protocol: ResearchConfig["protocol"] = "openai", reasoning_effort?: ResearchConfig["reasoning_effort"]): Promise<ResearchConfig> {
+  return (await axios.put(`${BASE}/config`, { base_url, model, api_key, protocol, reasoning_effort })).data;
 }
 export async function deleteResearchConfig(): Promise<ResearchConfig> { return (await axios.delete(`${BASE}/config`)).data; }
 export async function testResearchConnection(web_enabled: boolean): Promise<{ connection_ok: boolean; web_ok: boolean }> {

@@ -117,6 +117,7 @@ export const config: ResearchConfig = {
   protocol: "openai",
   base_url: "https://api.deepseek.com",
   model: "deepseek-flash",
+  reasoning_effort: "high",
   has_key: true,
   key_mask: "sk-****3f2a",
   runtime: { sdk_available: false, cli_available: false, sdk_version: "", cli_version: "" },
@@ -180,6 +181,7 @@ const job: ResearchJob = {
   external_sources: [],
   web_errors: [],
   usage: { prompt_tokens: 41280, completion_tokens: 1187, total_tokens: 42467 },
+  context_tokens: 12840,
   cost_usd: null,
 };
 

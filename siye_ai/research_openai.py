@@ -19,7 +19,11 @@ class ContextLimitError(ValueError):
 
 
 class StreamOptionsUnsupported(Exception):
-    """Provider rejects stream_options; retry once without it."""
+    """Provider rejects an optional request field; retry without it."""
+
+    def __init__(self, name="stream_options"):
+        super().__init__(name)
+        self.name = name
 
 
 def function(name, description, properties=None, required=None):
@@ -99,13 +103,17 @@ async def completion(client, payload, messages, tools, on_text=None):
             **({"tools": tools, "tool_choice": "auto"} if tools else {})}
     if on_text is not None:
         body["stream_options"] = {"include_usage": True}
-    try:
-        return await request_completion(client, payload, body, on_text)
-    except StreamOptionsUnsupported:
-        if "stream_options" not in body:
-            raise
-        body.pop("stream_options")
-        return await request_completion(client, payload, body, on_text)
+    effort = payload.get("reasoning_effort")
+    if isinstance(effort, str) and effort:
+        body["reasoning_effort"] = effort
+    for _ in range(3):
+        try:
+            return await request_completion(client, payload, body, on_text)
+        except StreamOptionsUnsupported as error:
+            if error.name not in body:
+                raise
+            body.pop(error.name)
+    raise ValueError("AI 请求失败，请检查基础地址、模型及工具调用兼容性")
 
 
 async def request_completion(client, payload, body, on_text):
@@ -113,8 +121,10 @@ async def request_completion(client, payload, body, on_text):
         async with client.stream("POST", payload["base_url"].rstrip("/") + "/chat/completions",
                 headers={"Authorization": "Bearer " + os.environ["SIYE_RESEARCH_API_KEY"]},
                 json=body) as response:
-            if response.status_code in {400, 422} and "stream_options" in body:
-                raise StreamOptionsUnsupported()
+            if response.status_code in {400, 422}:
+                for name in ("stream_options", "reasoning_effort"):
+                    if name in body:
+                        raise StreamOptionsUnsupported(name)
             if response.status_code in {401, 403}:
                 raise ValueError("AI 服务拒绝访问，请检查 API Key 和模型权限")
             if response.status_code == 429:
@@ -204,7 +214,9 @@ async def run_openai(payload, emit):
             count = reported.get(key, 0)
             if type(count) is int and count >= 0:
                 usage[key] += count
-        emit({"type": "usage", "usage": usage.copy(), "cost_usd": None})
+        context = reported.get("prompt_tokens")
+        emit({"type": "usage", "usage": usage.copy(), "cost_usd": None,
+              "context_tokens": context if type(context) is int and context >= 0 else None})
 
     async def compact_context(client, batch_size=SUMMARY_BATCH_SIZE):
         nonlocal messages

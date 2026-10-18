@@ -100,6 +100,40 @@ async def test_completion_without_callback_keeps_plain_json(monkeypatch):
     assert client.bodies[0]["stream"] is False and result["choices"][0]["message"]["content"] == "普通回答"
 
 
+@pytest.mark.asyncio
+async def test_reasoning_effort_is_dropped_when_rejected(monkeypatch):
+    monkeypatch.setenv("SIYE_RESEARCH_API_KEY", "test-key")
+    body = json.dumps({"choices": [{"message": {"content": "好"}}]}).encode()
+    client = FakeClient([FakeResponse(status_code=400), FakeResponse(body=body)])
+    payload = {"base_url": "https://example.com/v1", "model": "test", "reasoning_effort": "high"}
+    result = await completion(client, payload, [{"role": "user", "content": "hi"}], [])
+    assert client.bodies[0]["reasoning_effort"] == "high"
+    assert "reasoning_effort" not in client.bodies[1]
+    assert result["choices"][0]["message"]["content"] == "好"
+
+
+@pytest.mark.asyncio
+async def test_reasoning_effort_is_omitted_when_not_configured(monkeypatch):
+    monkeypatch.setenv("SIYE_RESEARCH_API_KEY", "test-key")
+    client = FakeClient([FakeResponse([sse({"choices": [{"delta": {"content": "好"}}]}), "data: [DONE]"])])
+    await completion(client, {"base_url": "https://example.com", "model": "test"}, [], [], lambda piece: None)
+    assert "reasoning_effort" not in client.bodies[0]
+
+
+@pytest.mark.asyncio
+async def test_usage_reports_context_tokens(monkeypatch):
+    events = []
+    async def completion(client, payload, messages, tools, on_text=None):
+        return {"choices": [{"message": {"content": "答案是八点出发。"}}],
+                "usage": {"prompt_tokens": 3210, "completion_tokens": 12, "total_tokens": 3222}}
+    monkeypatch.setattr(research_openai, "completion", completion)
+    await research_openai.run_openai({"materials": [source()], "base_url": "https://example.com",
+        "model": "test", "space_name": "攻略", "description": ""}, events.append)
+    usage = [event for event in events if event["type"] == "usage"]
+    assert usage and usage[-1]["context_tokens"] == 3210
+    assert usage[-1]["usage"]["total_tokens"] == 3222
+
+
 def test_delta_buffer_merges_small_chunks():
     events = []
     buffer = DeltaBuffer(events.append, size=6)

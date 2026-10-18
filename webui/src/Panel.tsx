@@ -12,6 +12,17 @@ import type { NoteDocument, NoteBridge } from "./contract";
 import type { WorkspaceSplitLayout } from "./contract";
 
 const SESSIONS_WIDTH = 300;
+const EFFORTS: { value: api.ResearchConfig["reasoning_effort"]; text: string }[] = [
+  { value: "", text: "默认" },
+  { value: "low", text: "低" },
+  { value: "medium", text: "中" },
+  { value: "high", text: "高" },
+];
+
+function formatTokens(value: number | undefined): string {
+  if (!value || !Number.isFinite(value) || value <= 0) return "0";
+  return value >= 1000 ? `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k` : String(Math.round(value));
+}
 
 function renderChildren(nodes: NoteDocument[] | undefined, sources: Record<string, SourceEntry>, numbering: Record<string, string>, key: string): ReactNode[] {
   const list = nodes ?? [];
@@ -130,6 +141,8 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
   const [modelOpen, setModelOpen] = useState(false);
   const [modelName, setModelName] = useState("");
   const modelBox = useRef<HTMLDivElement>(null);
+  const [effortOpen, setEffortOpen] = useState(false);
+  const effortBox = useRef<HTMLDivElement>(null);
   const [question, setQuestion] = useState("");
   const [web, setWeb] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -184,13 +197,15 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     element.style.height = `${Math.min(element.scrollHeight, 200)}px`;
   }, [question, open]);
   useEffect(() => {
-    if (!modelOpen) return;
+    if (!modelOpen && !effortOpen) return;
     const close = (event: PointerEvent) => {
-      if (modelBox.current && !modelBox.current.contains(event.target as Node)) setModelOpen(false);
+      const target = event.target as Node;
+      if (modelBox.current && !modelBox.current.contains(target)) setModelOpen(false);
+      if (effortBox.current && !effortBox.current.contains(target)) setEffortOpen(false);
     };
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
-  }, [modelOpen]);
+  }, [modelOpen, effortOpen]);
   const running = job?.status === "collecting" || job?.status === "analyzing";
   const locked = busy || running || job?.status === "awaiting_sources";
   const [clock, setClock] = useState(0);
@@ -271,6 +286,13 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     await config.refetch();
     setModelOpen(false);
     setModelName("");
+  });
+  const switchEffort = (value: api.ResearchConfig["reasoning_effort"]) => run(async () => {
+    const current = config.data;
+    if (!current || current.reasoning_effort === value) { setEffortOpen(false); return; }
+    await api.saveResearchConfig(current.base_url, current.model, undefined, current.protocol, value);
+    await config.refetch();
+    setEffortOpen(false);
   });
   const append = (result: api.ResearchJob) => run(async () => {
     if (!result.document || note.hasSavedResearch(result.job_id) || wasApplied(result.job_id)) return;
@@ -430,6 +452,20 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
                 <a className="research-model-link" href="#/settings/ai">{label("research.modelSettings", "打开模型设置")}</a>
               </div>}
             </div>
+            <div className="research-effort" ref={effortBox}>
+              <button type="button" className="research-effort-label" aria-haspopup="menu" aria-expanded={effortOpen}
+                disabled={!!locked || !config.data?.has_key} onClick={() => setEffortOpen((value) => !value)}>
+                <span>{label("research.effort", "推理")} {EFFORTS.find((row) => row.value === (config.data?.reasoning_effort ?? ""))?.text ?? "默认"}</span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+              {effortOpen && <div className="research-effort-menu" role="menu">
+                {EFFORTS.map((row) => <button type="button" role="menuitemradio" aria-checked={(config.data?.reasoning_effort ?? "") === row.value}
+                  key={row.value || "default"} className="research-effort-option" onClick={() => void switchEffort(row.value)}>
+                  <span>{row.text}</span>{(config.data?.reasoning_effort ?? "") === row.value && <Check aria-hidden="true" />}
+                </button>)}
+                <p className="research-effort-note">{label("research.effortNote", "服务不支持该参数时自动按默认重试。")}</p>
+              </div>}
+            </div>
             <label className="research-web-toggle" title={t(web ? "research.webHint" : "research.localHint")}><input type="checkbox" aria-label={t("research.allowWeb")} checked={web} disabled={busy || !preference.data} onChange={(event) => {
               const enabled = event.target.checked; setWeb(enabled);
               void run(async () => { try { await api.saveWebPreference(spaceId, enabled); } catch (cause) { setWeb(!enabled); throw cause; } });
@@ -438,7 +474,10 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
               : <button type="button" className="research-send" aria-label={t("research.send")} title={t("research.send")} disabled={sendDisabled} onClick={send}><ArrowUp aria-hidden="true" /></button>}
           </div>
         </div>
-        <p className="research-input-hint">{t("research.sendShortcut")}</p>
+        <div className="research-input-meta">
+          <span>{job?.context_tokens ? `${label("research.context", "上下文")} ${formatTokens(job.context_tokens)} tok` : ""}</span>
+          <span>{t("research.sendShortcut")}</span>
+        </div>
       </div>
     </section>
       {sessionsOpen && <>
