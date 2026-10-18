@@ -11,8 +11,9 @@ import type { NoteBridge, WorkspaceSplitLayout } from "../src/contract";
 import { zh } from "./zh";
 
 const params = new URLSearchParams(location.search);
-// file:// 下查询串不总被浏览器接受，暗色预览也用 #dark。
-document.documentElement.dataset.theme = params.get("theme") === "dark" || location.hash.includes("dark") ? "dark" : "light";
+// file:// 下查询串不总被浏览器接受，预览开关也接受 #dark／#stream／#running／#empty。
+const hash = location.hash.toLowerCase();
+document.documentElement.dataset.theme = params.get("theme") === "dark" || hash.includes("dark") ? "dark" : "light";
 if (location.protocol === "file:") installMockAdapter(axios);
 if (params.get("empty") === "1") axios.defaults.headers.common["x-mock-empty"] = "1";
 if (params.get("running") === "1") axios.defaults.headers.common["x-mock-running"] = "1";

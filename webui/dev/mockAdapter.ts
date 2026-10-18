@@ -5,9 +5,10 @@ import { config, conversations, historyJob, latestJob, runningJob, streamingJob 
 export function installMockAdapter(client: AxiosInstance) {
   client.defaults.adapter = (async (request) => {
     const search = new URLSearchParams(location.search);
-    const mode = search.get("empty") === "1" ? "empty"
-      : search.get("stream") === "1" ? "stream"
-      : search.get("running") === "1" ? "running" : "ready";
+    const hash = location.hash.toLowerCase();
+    const mode = hash.includes("stream") || search.get("stream") === "1" ? "stream"
+      : hash.includes("running") || search.get("running") === "1" ? "running"
+      : hash.includes("empty") || search.get("empty") === "1" ? "empty" : "ready";
     const job = mode === "stream" ? streamingJob : mode === "running" ? runningJob : latestJob;
     const url = request.url ?? "";
     let data: unknown = null;
