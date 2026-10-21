@@ -90,4 +90,11 @@ export const zh: Record<string, string> = {
   "research.effort": "推理等级",
   "research.effortNote": "服务不支持该参数时自动按默认重试。",
   "research.context": "上下文",
+  "research.copyAnswer": "复制回答",
+  "research.answerCopied": "已复制回答及来源链接",
+  "research.regenerate": "重做",
+  "research.regenerateHint": "保留原回答，使用相同问题与资料再生成一版",
+  "research.askSelection": "引用提问",
+  "research.quoteTooLong": "引用与草稿超过 2000 字，请缩短选文或草稿。",
+  "research.cached": "上下文复用",
 };

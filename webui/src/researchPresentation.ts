@@ -90,6 +90,6 @@ export function readingSummary(coverage: ResearchJob["coverage"]): ReadingSummar
     body: tally(coverage, "body"),
     comments: tally(coverage, "comments"),
     subtitles: tally(coverage, "subtitles"),
-    unread: coverage.filter((row) => !row.complete).length,
+    unread: coverage.filter((row) => !(row.required_complete ?? row.complete)).length,
   };
 }

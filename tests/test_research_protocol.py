@@ -212,7 +212,8 @@ async def test_batched_reads_and_multiple_submits_finish_once(monkeypatch):
     from siye_ai import research_openai
     calls = [call("submit_result", submission(), "submit1"), call("read_material", {"key": "S1", "section": "body", "index": 0}, "body"),
         call("read_material", {"key": "S3", "section": "body", "index": 0}, "video-body"),
-        call("read_material", {"key": "S3", "section": "comments", "index": 0}, "comments"), call("submit_result", submission(), "submit2")]
+        call("read_material", {"key": "S3", "section": "comments", "index": 0}, "comments"),
+        call("read_material", {"key": "S3", "section": "comments", "index": 1}, "comments2"), call("submit_result", submission(), "submit2")]
     async def completion(*args):
         return {"choices": [{"message": {"tool_calls": calls}}]}
     monkeypatch.setattr(research_openai, "completion", completion)
@@ -232,7 +233,9 @@ async def test_retries_are_bounded_then_normal_answer_retains_read_evidence(monk
         index = len(captured)
         if index == 1:
             calls = [call("read_material", {"key": "S1", "section": "body", "index": 0}, "read"),
-                call("read_material", {"key": "S3", "section": "body", "index": 0}, "video-body")]
+                call("read_material", {"key": "S3", "section": "body", "index": 0}, "video-body"),
+                call("read_material", {"key": "S3", "section": "comments", "index": 0}, "comments"),
+                call("read_material", {"key": "S3", "section": "comments", "index": 1}, "comments2")]
         elif not tools:
             return {"choices": [{"message": {"content": "建议清晨游园 [S1:body]。其余资料有缺口。"}}]}
         elif bad_submit:

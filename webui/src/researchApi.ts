@@ -12,7 +12,7 @@ export interface MaterialComponent {
   reason: string; truncated: boolean; collection_truncated?: boolean; sort?: string;
   metadata?: { source?: "native" | "local_asr"; engine?: string; model?: string; language?: string; duration?: number; cached?: boolean };
 }
-export interface SectionCoverage { chunks: number; read_chunks: number; read_indices: number[]; complete: boolean; reading_complete?: boolean; state: string; reason: string; truncated: boolean; collection_truncated?: boolean; content_limited?: boolean; count: number; }
+export interface SectionCoverage { chunks: number; read_chunks: number; cached_chunks?: number; read_indices: number[]; complete: boolean; reading_complete?: boolean; state: string; reason: string; truncated: boolean; collection_truncated?: boolean; content_limited?: boolean; count: number; }
 export interface ResearchMaterial {
   key: string; platform: string; title: string; url: string;
   body: MaterialComponent; comments: MaterialComponent; subtitles: MaterialComponent;
@@ -27,7 +27,7 @@ export interface ResearchJob {
   partial?: string;
   context_tokens?: number;
   activity?: { id?: string; tool: string; message: string; status?: "running" | "completed" | "failed" | "cancelled"; summary?: string; kind?: "commentary" }[];
-  coverage: { key: string; title: string; chunks: number; read_chunks: number; complete: boolean; sections?: Record<"body" | "comments" | "subtitles", SectionCoverage> }[];
+  coverage: { key: string; title: string; chunks: number; read_chunks: number; complete: boolean; required_complete?: boolean; sections?: Record<"body" | "comments" | "subtitles", SectionCoverage> }[];
   external_sources: { id: string; title: string; url: string; level: string; fetched_at: string }[];
   web_errors: string[]; usage: Record<string, number> | null; cost_usd: number | null;
 }
@@ -46,8 +46,8 @@ export async function saveWebPreference(spaceId: number, web_enabled: boolean): 
   return (await axios.put(`${BASE}/spaces/${spaceId}/preference`, { web_enabled })).data;
 }
 export async function latestResearch(spaceId: number): Promise<ResearchJob | null> { return (await axios.get(`${BASE}/spaces/${spaceId}/latest`)).data; }
-export async function createResearch(space_id: number, question: string, web_enabled: boolean, conversation_id?: string): Promise<ResearchJob> {
-  return (await axios.post(`${BASE}/jobs`, { space_id, question, web_enabled, conversation_id })).data;
+export async function createResearch(space_id: number, question: string, web_enabled: boolean, conversation_id?: string, regenerate_job_id?: string): Promise<ResearchJob> {
+  return (await axios.post(`${BASE}/jobs`, { space_id, question, web_enabled, conversation_id, regenerate_job_id })).data;
 }
 export interface ResearchConversation { id: string; title: string; turns: number; status: ResearchJob["status"]; latest_job_id: string; archived: boolean; }
 export async function listResearchConversations(spaceId: number): Promise<ResearchConversation[]> { return (await axios.get(`${BASE}/spaces/${spaceId}/conversations`)).data; }

@@ -28,17 +28,17 @@ def materials():
     return [article, video, unavailable]
 
 
-def test_review_plan_uses_video_subtitles_and_ignores_empty_sections_and_optional_comments():
+def test_review_plan_requires_video_subtitles_and_comments_and_article_body():
     access = MaterialAccess(materials())
     assert [r["required_section"] for r in access.model_coverage()] == ["body", "subtitles", None]
     initial = access.pending_reads({})
     assert {r["key"] for r in initial} == {"S1", "S2"}
-    assert not any(r["section"] == "comments" for r in initial)
+    assert any(r["section"] == "comments" for r in initial)
     for r in initial:
         read_material_section(access, {}, {}, r["key"], r["section"], r["index"])
     ReadingCompletionGuard().check(access, {})
     assert access.coverage()[1]["sections"]["body"]["read_chunks"] == 0
-    assert access.coverage()[1]["sections"]["comments"]["read_chunks"] == 0
+    assert access.coverage()[1]["sections"]["comments"]["reading_complete"]
     read_material_section(access, {}, {}, "S2", "body", 0)
     with pytest.raises(IncompleteReadingError) as error:
         ReadingCompletionGuard().check(access, {})
@@ -123,7 +123,7 @@ async def test_both_adapters_reject_early_plain_answer_then_read_all_primary_con
     assert len(prompts) == (3 if protocol == "openai" else 2)
     assert output["coverage"][0]["sections"]["body"]["reading_complete"]
     assert output["coverage"][1]["sections"]["subtitles"]["reading_complete"]
-    assert output["coverage"][1]["sections"]["comments"]["read_chunks"] == 0
+    assert output["coverage"][1]["sections"]["comments"]["reading_complete"]
     assert "提前回答" not in json.dumps(output["document"], ensure_ascii=False)
     if protocol == "openai":
         streaming = [e["type"] for e in events if e["type"].startswith("delta")]
@@ -168,6 +168,7 @@ async def test_partial_subtitle_citation_cannot_finish_before_remaining_chunk(mo
     row = materials()[1]
     parts = MaterialAccess([row]).parts[row["key"]]["subtitles"]
     first = [{"key": "S1", "section": "subtitles", "index": i} for i in range(len(parts) - 1)]
+    first += [r for r in MaterialAccess([row]).pending_reads({}) if r["section"] == "comments"]
     last = {"key": "S1", "section": "subtitles", "index": len(parts) - 1}
     data = {"protocol": protocol, "materials": [row], "space_name": "视频研究", "description": "",
         "base_url": "https://example.com", "model": "test", "workdir": str(tmp_path)}

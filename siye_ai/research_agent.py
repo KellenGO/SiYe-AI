@@ -6,6 +6,7 @@ import re
 from datetime import datetime, timezone
 
 from .runtime import agent_cli_path
+from .context_window import window_for
 from .research_documents import CHUNK_SIZE, MaterialAccess, ReadLoopGuard, ReadingCompletionGuard, IncompleteReadingError, RESEARCH_INSTRUCTIONS, SourceReferenceError, ToolInputError, ToolActivity, answer_document, model_external, read_material_section, research_context, result_document
 from .research_web import page_text, public_get, public_target
 
@@ -19,10 +20,14 @@ async def run_agent(payload, emit):
     probe = payload.get("mode") == "probe"
     web_enabled = bool(payload.get("web_enabled"))
     access = MaterialAccess(payload.get("materials", []))
+    access.restore_cache(payload.get("evidence_cache"), int(window_for(payload.get("model")) * 0.2))
     external, web_texts, observed = {}, {}, set()
     web_errors = []
     search_called, fetch_called, probe_called = False, False, False
     activity = ToolActivity(emit)
+    if access.cached_evidence:
+        step = activity.start("context_cache", "复用会话背景资料")
+        activity.finish(step, "context_cache", "复用会话背景资料", f"已将 {len(access.cached_evidence)} 段校验一致的原文放入本轮上下文")
     active_tools = {}
     read_guard = ReadLoopGuard()
     completion_guard = ReadingCompletionGuard()
@@ -204,7 +209,8 @@ async def run_agent(payload, emit):
                 document = (result_document(output, list(access.materials.values()), list(external.values()), coverage, web_enabled)
                     if output is not None else answer_document(answer, web_enabled, list(access.materials.values()), list(external.values()), coverage))
                 completion_guard.check(access, external, stopped=read_guard.exhausted)
-                return {"document": document, "coverage": coverage, "external_sources": list(external.values()), "web_errors": web_errors}
+                return {"document": document, "coverage": coverage, "external_sources": list(external.values()), "web_errors": web_errors,
+                        "evidence_cache": access.export_cache()}
             except IncompleteReadingError as error:
                 prompt = str(error)
                 emit({"type": "progress", "phase": "analyzing", "message": f"正在补读尚未读完的资料（剩余 {error.result['remaining_chunks']} 段）"})

@@ -192,9 +192,13 @@ async def run_openai(payload, emit):
     probe = payload.get("mode") == "probe"
     web = bool(payload.get("web_enabled"))
     access = MaterialAccess(payload.get("materials", []))
+    access.restore_cache(payload.get("evidence_cache"), int(context_budget(payload.get("model"))[0] * 0.4))
     external, texts, web_errors = {}, {}, []
     checked, searched, fetched = False, False, False
     activity = ToolActivity(emit)
+    if access.cached_evidence:
+        step = activity.start("context_cache", "复用会话背景资料")
+        activity.finish(step, "context_cache", "复用会话背景资料", f"已将 {len(access.cached_evidence)} 段校验一致的原文放入本轮上下文")
     read_guard = ReadLoopGuard()
     completion_guard = ReadingCompletionGuard()
     submit_failures = 0
@@ -261,6 +265,9 @@ async def run_openai(payload, emit):
         # Rebuild only between complete tool batches; never leave orphaned tool-call IDs.
         evidence = [message["content"] for message in messages[2:]
                     if message.get("content") and message["role"] in {"tool", "user"}]
+        background = json.loads(messages[1]["content"]).get("background_evidence", [])
+        if background:
+            evidence.insert(0, json.dumps({"background_evidence": background}, ensure_ascii=False))
         if not evidence:
             raise ContextLimitError("AI 上下文不足以容纳资料清单，请缩小空间资料或新建会话")
         emit({"type": "progress", "phase": "analyzing", "message": "正在整理已读证据，释放上下文"})
@@ -302,7 +309,7 @@ async def run_openai(payload, emit):
                     degraded = True
             summaries.append(summary)
         messages = [{"role": "system", "content": RESEARCH_INSTRUCTIONS},
-                    {"role": "user", "content": research_context(payload, access)}]
+                    {"role": "user", "content": research_context(payload, access, include_evidence=False)}]
         messages.extend({"role": "user", "content": json.dumps({"evidence_summary": summary}, ensure_ascii=False)} for summary in summaries)
         messages.append({"role": "user", "content": json.dumps({"external": model_external(external.values()),
             "instruction": "以上是本轮已读证据的压缩笔记，仍可能遗漏细节，不是新来源。按清单读取尚未读且相关的分段；证据足够时直接回答，保持分区引用和不确定性，不重复已读分段。"}, ensure_ascii=False)})
@@ -317,7 +324,8 @@ async def run_openai(payload, emit):
         document = (answer_document(text, web, list(access.materials.values()), list(external.values()), coverage) if text is not None else
                     result_document(output, list(access.materials.values()), list(external.values()), coverage, web))
         completion_guard.check(access, external, stopped=not tools)
-        return {"document": document, "coverage": coverage, "external_sources": list(external.values()), "web_errors": web_errors}
+        return {"document": document, "coverage": coverage, "external_sources": list(external.values()), "web_errors": web_errors,
+                "evidence_cache": access.export_cache()}
 
     async with httpx.AsyncClient(timeout=120, trust_env=False, follow_redirects=False) as client:
         soft_limit, hard_limit = context_budget(payload.get("model"))
