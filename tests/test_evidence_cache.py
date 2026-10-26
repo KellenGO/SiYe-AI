@@ -43,7 +43,7 @@ def test_cache_expiry_changes_budget_and_public_id_remapping():
     restored = MaterialAccess([row])
     restored.restore_cache(cache, 100000, now=101)
     assert restored.pending_reads({}) == []
-    assert all(s["cached_chunks"] == 1 for n, s in restored.coverage()[0]["sections"].items() if n != "subtitles")
+    assert all(s["cached_chunks"] == 1 for n, s in restored.coverage()[0]["sections"].items() if n in {"body", "comments"})
     assert "原文里的条件与数字 12" in research_context({"space_name": "主题", "description": ""}, restored)
     for changed, budget, now in [(row, 100000, 100 + CACHE_SECONDS), (row, 1, 101), (source("zhihu"), 100000, 101)]:
         access = MaterialAccess([changed])

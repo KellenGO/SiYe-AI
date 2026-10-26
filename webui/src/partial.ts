@@ -1,12 +1,12 @@
 import type { NoteDocument } from "./contract";
 
 /** 流式回答还没定稿时的轻量渲染：只按行切块，等定稿再换成服务端校验过的文档。 */
-const INLINE = /(\*\*[^*\n]+\*\*|\[[SW]\d+(?::(?:body|comments|subtitles))?\])/;
+const INLINE = /(\*\*[^*\n]+\*\*|\[[SW]\d+(?::(?:body|comments|subtitles|ocr))?\])/;
 
 function inline(value: string): NoteDocument[] {
   return value.split(INLINE).filter((part) => part !== "").map((part) => {
     if (/^\*\*[^*\n]+\*\*$/.test(part)) return { type: "text", text: part.slice(2, -2), marks: [{ type: "bold" }] };
-    if (/^\[[SW]\d+(?::(?:body|comments|subtitles))?\]$/.test(part)) return { type: "text", text: part, marks: [{ type: "link" }] };
+    if (/^\[[SW]\d+(?::(?:body|comments|subtitles|ocr))?\]$/.test(part)) return { type: "text", text: part, marks: [{ type: "link" }] };
     return { type: "text", text: part };
   });
 }
@@ -35,7 +35,7 @@ export function partialDocument(text: string): NoteDocument {
 export function numberingFor(text: string, sources: Record<string, unknown>): Record<string, string> {
   const map: Record<string, string> = {};
   let next = 0;
-  for (const match of text.matchAll(/\[([SW]\d+)(?::(?:body|comments|subtitles))?\]/g)) {
+  for (const match of text.matchAll(/\[([SW]\d+)(?::(?:body|comments|subtitles|ocr))?\]/g)) {
     if (!(match[1] in map) && match[1] in sources) map[match[1]] = String(++next);
   }
   return map;

@@ -41,7 +41,7 @@ async def run_agent(payload, emit):
         read_guard.observe("manifest", {}, value)
         return text_result(value)
 
-    @tool("read_material", "key 使用 S1/W1 等公开标识，按 body/comments/subtitles 读取；网页只有 body，index 从 0 开始，缺口不重试", {"key": str, "section": str, "index": int})
+    @tool("read_material", "key 使用 S1/W1 等公开标识，按 body/comments/subtitles/ocr 读取；网页只有 body，index 从 0 开始，缺口不重试", {"key": str, "section": str, "index": int})
     async def read_material(args):
         try:
             if read_guard.exhausted:

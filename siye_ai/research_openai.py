@@ -206,7 +206,7 @@ async def run_openai(payload, emit):
     tools = [function("check_connection", "验证工具调用后再回复 OK")] if probe else [
         function("manifest", "列出选定空间资料及外部来源、分段数、读取情况"),
         function("read_material", "按 section 读取资料的一段；网页仅支持 body，index 从 0 开始",
-                 {"key": {"type": "string", "description": "本轮公开标识，如 S1 或 W1"}, "section": {"type": "string", "enum": ["body", "comments", "subtitles"]},
+                 {"key": {"type": "string", "description": "本轮公开标识，如 S1 或 W1"}, "section": {"type": "string", "enum": ["body", "comments", "subtitles", "ocr"]},
                   "index": {"type": "integer", "minimum": 0}}, ["key", "section", "index"]),
         {"type": "function", "function": {"name": "submit_result", "description": "完成必要读取后提交一次；sources 使用 S1/S3:comments/W1 等公开标识；也可直接普通回复",
                                               "parameters": RESULT_SCHEMA}}]

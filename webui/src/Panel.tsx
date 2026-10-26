@@ -81,9 +81,9 @@ function renderNode(node: NoteDocument, sources: Record<string, SourceEntry>, nu
 
 function readLabel(row: api.ResearchJob["coverage"][number] | undefined, label: (key: string, fallback: string) => string): string {
   if (!row?.sections) return "";
-  return (["body", "comments", "subtitles"] as const)
-    .filter((name) => row.sections![name].chunks > 0)
-    .map((name) => `${label(`research.component.${name}`, name === "body" ? "正文" : name === "comments" ? "评论" : "字幕")} ${row.sections![name].read_chunks}/${row.sections![name].chunks}`)
+  return (["body", "comments", "subtitles", "ocr"] as const)
+    .filter((name) => (row.sections![name]?.chunks ?? 0) > 0)
+    .map((name) => `${label(`research.component.${name}`, name === "body" ? "正文" : name === "comments" ? "评论" : name === "ocr" ? "图片文字" : "字幕")} ${row.sections![name]!.read_chunks}/${row.sections![name]!.chunks}`)
     .join(" · ");
 }
 
@@ -422,6 +422,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
                   {summary.body.total > 0 && <span><BookOpen aria-hidden="true" />{t("research.component.body")} {summary.body.read}/{summary.body.total}</span>}
                   {summary.comments.total > 0 && <span><MessageSquare aria-hidden="true" />{t("research.component.comments")} {summary.comments.read}/{summary.comments.total}</span>}
                   {summary.subtitles.total > 0 && <span><Captions aria-hidden="true" />{t("research.component.subtitles")} {summary.subtitles.read}/{summary.subtitles.total}</span>}
+                  {summary.ocr.total > 0 && <span><BookOpen aria-hidden="true" />{label("research.component.ocr", "图片文字")} {summary.ocr.read}/{summary.ocr.total}</span>}
                   {summary.unread > 0 && <span className="is-warn" title={t("research.unread")}>{label("research.partial", "部分未读完")}</span>}
                 </span>}
               </div>
@@ -443,20 +444,27 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
                 </details>)}
                 </div>}
                 {row.materials.length > 0 && <section className="research-material-details"><h3>{t("research.coverage")} · {row.materials.length}</h3>
-                  <div className="space-research-materials">{row.materials.map((item) => <article key={item.key}>
+                  <div className="space-research-materials">{row.materials.map((raw) => {
+                    const item = { ...raw, ocr: raw.ocr ?? { state: "not_applicable", reason: "", truncated: false, count: 0 } as api.MaterialComponent };
+                    const names = (["body", "comments", "subtitles", "ocr"] as const).filter((name) => name !== "ocr" || item.ocr.state !== "not_applicable");
+                    return <article key={item.key}>
                     <a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a>
-                    <div className="space-research-tags">{(["body", "comments", "subtitles"] as const).map((name) => <span key={name} className={`space-research-tag is-${item[name].state}`}>
+                    <div className="space-research-tags">{names.map((name) => <span key={name} className={`space-research-tag is-${item[name].state}`}>
                       {t(`research.component.${name}`)} {item[name].state === "ok" ? "✓" : item[name].state === "not_applicable" ? "·" : "×"} {t(`research.state.${item[name].state}`)}{name === "comments" && ` · ${t("research.commentCount", { count: item[name].count })}`}
                       {name === "subtitles" && item[name].metadata?.source && ` · ${transcriptDuration(item[name].metadata?.duration)} · ${t(`research.subtitleSource.${item[name].metadata?.source}`)}`}
+                      {name === "ocr" && item.ocr.metadata?.total !== undefined && ` · ${t("research.ocrCount", { processed: item.ocr.metadata.processed, total: item.ocr.metadata.total })}`}
+                      {name === "ocr" && !!item.ocr.metadata?.cached_images && ` · ${t("research.ocrCached", { count: item.ocr.metadata.cached_images })}`}
                       {(item[name].collection_truncated ?? item[name].truncated) && ` · ${t("research.collectionPartial")}`}
                     </span>)}</div>
-                    {(["body", "comments", "subtitles"] as const).map((name) => item[name].reason && <p key={name} className="space-research-hint">{t(`research.component.${name}`)}：{item[name].reason}</p>)}
+                    {names.map((name) => item[name].reason && <p key={name} className="space-research-hint">{t(`research.component.${name}`)}：{item[name].reason}</p>)}
+                    {item.ocr.metadata?.failures?.map((failure) => <p key={`ocr-${failure.image}`} className="space-research-hint">{t("research.ocrImageFailure", failure)}</p>)}
                     {item.comments.sort && <p className="space-research-hint">{item.comments.sort}</p>}
-                    {row.coverage.find((source) => source.key === item.key)?.sections && <p className="space-research-hint">{(["body", "comments", "subtitles"] as const).map((name) => {
+                    {row.coverage.find((source) => source.key === item.key)?.sections && <p className="space-research-hint">{names.map((name) => {
                       const section = row.coverage.find((source) => source.key === item.key)!.sections![name];
+                      if (!section) return "";
                       return `${t(`research.component.${name}`)} ${t(sectionReading(section, name === "comments"), { read: section.read_chunks, total: section.chunks, count: section.count })}${section.cached_chunks ? ` · ${label("research.cached", "上下文复用")} ${section.cached_chunks}` : ""}`;
                     }).join(" · ")}</p>}
-                  </article>)}</div>
+                  </article>; })}</div>
                 </section>}
                 {row.web_errors.length > 0 && <p className="space-research-hint">{t("research.webFailed")}</p>}
                 {row.external_sources.length > 0 && <section className="research-external-sources"><h3>{t("research.externalSources")}</h3>{row.external_sources.map((source) => <p key={source.id}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a><span> · {source.level} · {source.fetched_at}</span></p>)}</section>}
@@ -467,6 +475,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
               </div></div>}
               {row.document && <>
                 {rowInserted && !rowApplied && <p className="space-research-warning">{t("research.draftInserted")}</p>}
+                {current && row.materials.some((item) => item.ocr && ["failed", "missing", "restricted"].includes(item.ocr.state)) && <button type="button" className="btn small" disabled={!!locked || archived || !config.data?.has_key} onClick={() => void run(async () => { await updateJob(() => api.createResearch(spaceId, row.question, web, row.conversation_id, row.job_id)); })}>{label("research.retryOcr", "重试图片文字")}</button>}
                 <div className="research-reply-actions">
                   <button type="button" className="btn small research-answer-action" aria-label={label("research.copyAnswer", "复制回答")} onClick={() => void run(async () => { await navigator.clipboard.writeText(answerText(row.document!)); setNotice(label("research.answerCopied", "已复制回答及来源链接")); })}><Copy aria-hidden="true" />{label("research.copyAnswer", "复制回答")}</button>
                   <button type="button" className="btn small research-answer-action" disabled={!!locked || archived || !config.data?.has_key} title={label("research.regenerateHint", "保留原回答，使用相同问题与资料再生成一版")} onClick={() => void run(async () => { await updateJob(() => api.createResearch(spaceId, row.question, web, row.conversation_id, row.job_id)); })}><RotateCcw aria-hidden="true" />{label("research.regenerate", "重做")}</button>

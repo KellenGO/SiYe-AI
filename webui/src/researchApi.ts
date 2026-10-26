@@ -10,12 +10,14 @@ export interface ResearchConfig {
 export interface MaterialComponent {
   state: string; count: number;
   reason: string; truncated: boolean; collection_truncated?: boolean; sort?: string;
-  metadata?: { source?: "native" | "local_asr"; engine?: string; model?: string; language?: string; duration?: number; cached?: boolean };
+  metadata?: { source?: "native" | "local_asr"; engine?: string; model?: string; language?: string; duration?: number; cached?: boolean;
+    total?: number; processed?: number; recognized?: number; empty?: number; failed?: number; cached_images?: number; failures?: { image: number; reason: string }[] };
 }
 export interface SectionCoverage { chunks: number; read_chunks: number; cached_chunks?: number; read_indices: number[]; complete: boolean; reading_complete?: boolean; state: string; reason: string; truncated: boolean; collection_truncated?: boolean; content_limited?: boolean; count: number; }
 export interface ResearchMaterial {
   key: string; platform: string; title: string; url: string;
   body: MaterialComponent; comments: MaterialComponent; subtitles: MaterialComponent;
+  ocr?: MaterialComponent;
 }
 export interface ResearchJob {
   job_id: string; space_id: number; web_enabled: boolean; question: string;
@@ -27,7 +29,7 @@ export interface ResearchJob {
   partial?: string;
   context_tokens?: number;
   activity?: { id?: string; tool: string; message: string; status?: "running" | "completed" | "failed" | "cancelled"; summary?: string; kind?: "commentary" }[];
-  coverage: { key: string; title: string; chunks: number; read_chunks: number; complete: boolean; required_complete?: boolean; sections?: Record<"body" | "comments" | "subtitles", SectionCoverage> }[];
+  coverage: { key: string; title: string; chunks: number; read_chunks: number; complete: boolean; required_complete?: boolean; sections?: Record<"body" | "comments" | "subtitles", SectionCoverage> & { ocr?: SectionCoverage } }[];
   external_sources: { id: string; title: string; url: string; level: string; fetched_at: string }[];
   web_errors: string[]; usage: Record<string, number> | null; cost_usd: number | null;
 }

@@ -21,7 +21,7 @@ def test_sections_are_discoverable_and_exact_reads_are_independent():
     row = evidence()
     access = MaterialAccess([row])
     manifest = access.manifest()[0]
-    assert set(manifest["sections"]) == {"body", "comments", "subtitles"}
+    assert set(manifest["sections"]) == {"body", "comments", "subtitles", "ocr"}
     assert manifest["sections"]["body"]["chunks"] == 1
     assert manifest["sections"]["comments"]["count"] == 1
     assert manifest["sections"]["subtitles"]["count"] == 20

@@ -14,7 +14,7 @@ export function sectionReading(section: { chunks: number; read_chunks: number; r
   return "research.sectionRead";
 }
 
-const REFERENCE = /^\[([SW]\d+)(?::(body|comments|subtitles))?\]$/;
+const REFERENCE = /^\[([SW]\d+)(?::(body|comments|subtitles|ocr))?\]$/;
 
 export interface SourceEntry {
   citation: string;
@@ -68,10 +68,11 @@ export interface ReadingSummary {
   body: { read: number; total: number };
   comments: { read: number; total: number };
   subtitles: { read: number; total: number };
+  ocr: { read: number; total: number };
   unread: number;
 }
 
-function tally(coverage: ResearchJob["coverage"], section: "body" | "comments" | "subtitles") {
+function tally(coverage: ResearchJob["coverage"], section: "body" | "comments" | "subtitles" | "ocr") {
   let read = 0;
   let total = 0;
   for (const row of coverage) {
@@ -90,6 +91,7 @@ export function readingSummary(coverage: ResearchJob["coverage"]): ReadingSummar
     body: tally(coverage, "body"),
     comments: tally(coverage, "comments"),
     subtitles: tally(coverage, "subtitles"),
+    ocr: tally(coverage, "ocr"),
     unread: coverage.filter((row) => !(row.required_complete ?? row.complete)).length,
   };
 }

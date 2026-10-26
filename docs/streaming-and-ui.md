@@ -48,6 +48,6 @@ cd webui; npm run shot -- --url "file:///.../.preview/site/dev/index.html#dark" 
 
 - Anthropic（`claude_agent_sdk`）路径仍是非流式，只在每条 AssistantMessage 完整到达后更新。
 - 主程序 `webui/src/index.css` 里仍有旧的 `.space-research-*` 面板规则（约 35 处）。扩展样式优先级更高，已在 `styles.css` 顶部显式复位会叠加的 `display`／`gap`／`margin`；这些旧规则可以下一步整体退休，但需要主程序侧做视觉回归。
-- 图片理解：小红书图文笔记的封面和配图还没进资料清单，`research_documents.py` 只处理文本、评论和字幕。
+- 图片画面理解尚未提供；小红书图文的图片文字由主程序本地 OCR 提取，插件通过独立 `ocr` 分区读取、引用和复用。详情显示图片处理数量、失败编号及缓存，识别成功与 AI 已读分别统计。
 - `@` 指定作用域：目前一次只能对整个空间提问，不能只挑几条链接。
 - 会话标签页、斜杠指令：属于交互形态升级，等流式和证据面板稳定后再做。
