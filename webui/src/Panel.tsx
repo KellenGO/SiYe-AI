@@ -1,6 +1,6 @@
 import { createElement, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Archive, ArchiveRestore, ArrowUp, BookOpen, Captions, Check, ChevronDown, Columns2, Copy, Globe, History, LoaderCircle, Maximize2, MessageSquare, Minimize2, NotebookPen, Plus, RotateCcw, Search, Sparkles, Square, Terminal, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowUp, BookOpen, Captions, Check, ChevronDown, Columns2, Copy, Globe, History, LoaderCircle, Maximize2, MessageSquare, Minimize2, Plus, RotateCcw, Search, Share2, Sparkles, Square, Terminal, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import * as api from "./researchApi";
@@ -8,6 +8,7 @@ import { citedSources, platformLabel, readingSummary, referenceOf, sectionReadin
 import { numberingFor, partialDocument } from "./partial";
 import { providerOf } from "./models";
 import { answerText, quotedQuestion } from "./answerActions";
+import ShareImageDialog from "./ShareImageDialog";
 import { spaceError } from "siye-host";
 import type { NoteDocument, NoteBridge } from "./contract";
 import type { WorkspaceSplitLayout } from "./contract";
@@ -128,7 +129,7 @@ function LiveProgress({ row, elapsed, streaming }: { row: api.ResearchJob; elaps
   </div>;
 }
 
-export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, note, archived, open, onClose, split }: {
+export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, archived, open, onClose, split }: {
   spaceId: number; spaceName: string; sourceCount: number; note: NoteBridge; archived: boolean; open: boolean; onClose: () => void; split: WorkspaceSplitLayout;
 }) {
   const { t } = useTranslation();
@@ -159,6 +160,8 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
   const generationAttempt = useRef<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [shareIds, setShareIds] = useState<string[] | null>(null);
+  const [sharePreview, setSharePreview] = useState(false);
   const [selection, setSelection] = useState<{ text: string; x: number; y: number; jobId: string } | null>(null);
   const [job, setJob] = useState<api.ResearchJob | null>(null);
   const [turns, setTurns] = useState<api.ResearchJob[]>([]);
@@ -216,6 +219,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
   }, [modelOpen]);
   const running = job?.status === "collecting" || job?.status === "analyzing";
   const locked = busy || running || job?.status === "awaiting_sources";
+  useEffect(() => { setShareIds(null); setSharePreview(false); }, [open, job?.conversation_id]);
   useEffect(() => {
     setSelection(null);
   }, [open, job?.job_id, locked]);
@@ -339,11 +343,6 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     await api.saveResearchConfig(current.base_url, current.model, undefined, current.protocol, value);
     await config.refetch();
   });
-  const append = (result: api.ResearchJob) => run(async () => {
-    if (!result.document || note.hasSavedResearch(result.job_id) || wasApplied(result.job_id)) return;
-    await note.append(result.job_id, result.document);
-    setNotice(t("research.appended"));
-  });
   useEffect(() => {
     if (job?.status === "collecting") generationAttempt.current = null;
     if (!open || !job || job.status !== "awaiting_sources" || archived || busy || pending.current || generationAttempt.current === job.job_id) return;
@@ -351,6 +350,9 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     void run(async () => { await updateJob(() => api.researchAction(job.job_id, "generate")); });
   }, [open, job?.job_id, job?.status, archived, busy]);
   const displayed = job ? [...turns.filter((row) => row.job_id !== job.job_id), job] : [];
+  const shareable = displayed.filter((row) => row.status === "ready" && row.document);
+  const shared = shareable.filter((row) => shareIds?.includes(row.job_id));
+  const cancelShare = () => { setShareIds(null); setSharePreview(false); };
   const provider = config.data ? providerOf(config.data.base_url) : undefined;
   const modelService = provider?.name ?? (() => {
     try { return new URL(config.data?.base_url ?? "").hostname; } catch { return label("research.customService", "自定义服务"); }
@@ -374,8 +376,8 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
     } else { setExpanded(true); setSessionsOpen(true); }
   };
   return createPortal(<dialog ref={dialog} className={`space-research-dialog${fullscreen ? " is-expanded" : ""}${split.active ? " is-split" : ""}${docked ? " has-sessions" : ""}`} aria-labelledby={titleId}
-    onCancel={(event) => { event.preventDefault(); onClose(); }}
-    onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (sessionsOpen) setSessionsOpen(false); else if (split.active) split.restore(); else onClose(); } }}>
+    onCancel={(event) => { event.preventDefault(); if (shareIds) cancelShare(); else onClose(); }}
+    onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (shareIds) cancelShare(); else if (sessionsOpen) setSessionsOpen(false); else if (split.active) split.restore(); else onClose(); } }}>
     {!narrow && <div className="research-resize-handle" role="separator" tabIndex={0} aria-orientation="vertical" aria-label={t(split.active ? "spaces.resizeSplit" : "research.resizePanel")} title={split.active ? t("spaces.resizeSplitHint") : undefined} aria-valuemin={split.active ? 360 : minimumWidth} aria-valuemax={split.active ? viewportWidth - 360 : viewportWidth} aria-valuenow={split.active ? split.noteWidth : panelWidth}
       onPointerDown={(event) => { if (event.button !== 0) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); drag.current = { pointer: event.pointerId, x: event.clientX, width: panelWidth, latest: panelWidth }; }}
       onPointerMove={(event) => { const start = drag.current; if (!start || start.pointer !== event.pointerId) return; if (split.active) { split.resize(viewportWidth - start.width + event.clientX - start.x); return; } start.latest = Math.max(minimumWidth, Math.min(start.width + start.x - event.clientX, viewportWidth)); setExpanded(false); setWidth(start.latest); }}
@@ -395,6 +397,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
         </div>
       </header>
       <div className="research-chat-context"><span>{spaceName}</span><span>{t("research.selectedSources", { count: sourceCount })}</span></div>
+      {shareIds !== null && <div className="research-share-selection-head"><label><input type="checkbox" aria-label={t("research.shareSelectAll")} checked={shared.length === shareable.length && shared.length > 0} onChange={(event) => setShareIds(event.target.checked ? shareable.map((row) => row.job_id) : [])} />{t("research.shareSelectAll")}</label><button type="button" className="research-icon-button" aria-label={t("research.shareCancel")} title={t("research.shareCancel")} onClick={cancelShare}><X aria-hidden="true" /></button></div>}
       <div className="space-research-body" ref={body}>
         {config.data && !config.data.has_key && <p className="space-research-warning">{t("research.setupRequired")} <a href="#/settings/ai">{t("research.configure")}</a></p>}
         {!job && <div className="research-chat-empty">
@@ -403,15 +406,14 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
           <p>{t(sourceCount === 0 ? "research.addSourcesFirst" : "research.chatIntro")}</p>
           <div className="research-starters">{["starterSummary", "starterCompare", "starterGaps"].map((key) => <button type="button" key={key} disabled={archived || sourceCount === 0} onClick={() => { setQuestion(t(`research.${key}`)); dialog.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus(); }}>{t(`research.${key}`)}</button>)}</div>
         </div>}
-        {displayed.map((row) => {
+        {displayed.map((row, turnIndex) => {
           const current = row.job_id === job?.job_id;
-          const rowInserted = note.hasResearch(row.job_id);
-          const rowApplied = note.hasSavedResearch(row.job_id) || wasApplied(row.job_id);
           const sources = sourceIndex(row.materials, row.external_sources);
           const summary = readingSummary(row.coverage);
           const cited = citedSources(row.document, sources);
           const numbering = Object.fromEntries(cited.map((item, index) => [item.citation, String(index + 1)]));
-          return <article className="research-chat-turn" key={row.job_id}>
+          return <article className={`research-chat-turn${shareIds !== null ? " is-selecting" : ""}${shareIds?.includes(row.job_id) ? " is-selected" : ""}`} key={row.job_id}>
+            {shareIds !== null && row.status === "ready" && row.document && <input className="research-share-turn-check" type="checkbox" aria-label={t("research.shareTurn", { number: turnIndex + 1 })} checked={shareIds.includes(row.job_id)} onChange={(event) => setShareIds(event.target.checked ? [...shareIds, row.job_id] : shareIds.filter((id) => id !== row.job_id))} />}
             <div className="research-user-message"><p>{row.question || t("research.defaultQuestion")}</p></div>
             <div className="research-assistant-message">
               <div className="research-message-label">
@@ -429,10 +431,10 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
               {!row.document && <LiveProgress row={row} elapsed={current ? elapsed : 0} streaming={!!row.partial} />}
               {!row.document && row.partial && <div className="space-research-preview is-streaming">{renderChildren(partialDocument(row.partial).content, sources, numberingFor(row.partial, sources), `${row.job_id}-live`)}</div>}
               {row.error && <p role="alert">{row.error}</p>}
-              {row.document && <div className="space-research-preview" aria-label={t("research.preview")} onPointerUp={(event) => captureSelection(event.currentTarget, row.job_id)} onKeyUp={(event) => { if (event.key.startsWith("Arrow") || event.key === "Shift") captureSelection(event.currentTarget, row.job_id); }}>{renderChildren(row.document.content, sources, numbering, row.job_id)}</div>}
+              {row.document && <div className="space-research-preview" aria-label={t("research.preview")} onPointerUp={(event) => { if (shareIds === null) captureSelection(event.currentTarget, row.job_id); }} onKeyUp={(event) => { if (shareIds === null && (event.key.startsWith("Arrow") || event.key === "Shift")) captureSelection(event.currentTarget, row.job_id); }}>{renderChildren(row.document.content, sources, numbering, row.job_id)}</div>}
               {selection?.jobId === row.job_id && <button type="button" className="research-selection-ask" style={{ left: selection.x, top: selection.y }} onPointerDown={(event) => event.preventDefault()} onClick={askSelection}><MessageSquare aria-hidden="true" />{label("research.askSelection", "引用提问")}</button>}
               {row.document && <SourceList document={row.document} sources={sources} coverage={row.coverage} />}
-              {!running && (row.materials.length > 0 || !!row.activity?.length || row.external_sources.length > 0 || row.web_errors.length > 0 || row.stale_snapshot) && <details className="research-tool-trace">
+              {shareIds === null && !running && (row.materials.length > 0 || !!row.activity?.length || row.external_sources.length > 0 || row.web_errors.length > 0 || row.stale_snapshot) && <details className="research-tool-trace">
                 <summary><ChevronDown aria-hidden="true" />{label("research.trace", "读取过程")}{row.activity?.length ? ` · ${row.activity.length}` : ""}</summary>
                 <p className="space-research-hint">{t(row.web_enabled ? "research.webUsed" : "research.spaceUsed")}</p>
                 {row.status === "collecting" && row.phase === "transcribing" && <p className="space-research-hint">{row.message}</p>}
@@ -473,13 +475,12 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
                 <button type="button" className="btn small primary" disabled={busy || archived} onClick={() => void run(async () => { await updateJob(() => api.researchAction(row.job_id, "generate")); })}>{t("research.continue")}</button>
                 <button type="button" className="btn small" disabled={busy || archived} onClick={() => void run(async () => { await updateJob(() => api.researchAction(row.job_id, "retry")); })}>{t("research.retrySources")}</button>
               </div></div>}
-              {row.document && <>
-                {rowInserted && !rowApplied && <p className="space-research-warning">{t("research.draftInserted")}</p>}
+              {row.document && shareIds === null && <>
                 {current && row.materials.some((item) => item.ocr && ["failed", "missing", "restricted"].includes(item.ocr.state)) && <button type="button" className="btn small" disabled={!!locked || archived || !config.data?.has_key} onClick={() => void run(async () => { await updateJob(() => api.createResearch(spaceId, row.question, web, row.conversation_id, row.job_id)); })}>{label("research.retryOcr", "重试图片文字")}</button>}
                 <div className="research-reply-actions">
-                  <button type="button" className="btn small research-answer-action" aria-label={label("research.copyAnswer", "复制回答")} onClick={() => void run(async () => { await navigator.clipboard.writeText(answerText(row.document!)); setNotice(label("research.answerCopied", "已复制回答及来源链接")); })}><Copy aria-hidden="true" />{label("research.copyAnswer", "复制回答")}</button>
-                  <button type="button" className="btn small research-answer-action" disabled={!!locked || archived || !config.data?.has_key} title={label("research.regenerateHint", "保留原回答，使用相同问题与资料再生成一版")} onClick={() => void run(async () => { await updateJob(() => api.createResearch(spaceId, row.question, web, row.conversation_id, row.job_id)); })}><RotateCcw aria-hidden="true" />{label("research.regenerate", "重做")}</button>
-                  <button type="button" className="btn small primary research-write-note" disabled={archived || busy || note.conflict || rowApplied} onClick={() => void append(row)}>{rowApplied ? <Check aria-hidden="true" /> : <NotebookPen aria-hidden="true" />}{t(rowApplied ? "research.appended" : rowInserted ? "research.retrySave" : "research.append")}</button>
+                  <button type="button" className="research-icon-button research-answer-action" title={t("research.copyAnswer")} aria-label={t("research.copyAnswer")} onClick={() => void run(async () => { await navigator.clipboard.writeText(answerText(row.document!)); setNotice(t("research.answerCopied")); })}><Copy aria-hidden="true" /></button>
+                  <button type="button" className="research-icon-button research-answer-action" title={t("research.shareAnswer")} aria-label={t("research.shareAnswer")} disabled={row.status !== "ready"} onClick={() => { setSelection(null); setModelOpen(false); setSessionsOpen(false); setShareIds([row.job_id]); }}><Share2 aria-hidden="true" /></button>
+                  <button type="button" className="research-icon-button research-answer-action research-regenerate" aria-label={t("research.regenerate")} disabled={!!locked || archived || !config.data?.has_key} title={t("research.regenerateHint")} onClick={() => void run(async () => { await updateJob(() => api.createResearch(spaceId, row.question, web, row.conversation_id, row.job_id)); })}><RotateCcw aria-hidden="true" /></button>
                 </div>
               </>}
               {current && row.status === "failed" && <button type="button" className="btn small" disabled={busy || archived} onClick={() => void run(async () => { await updateJob(() => api.researchAction(row.job_id, "retry")); })}>{t("research.retrySources")}</button>}
@@ -487,7 +488,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
           </article>;
         })}
       </div>
-      <div className="space-research-footer">
+      {shareIds !== null ? <div className="space-research-footer research-share-selection-footer"><span role="status">{t("research.shareSelected", { count: shared.length })}</span><button type="button" className="btn small primary" disabled={shared.length === 0} onClick={() => setSharePreview(true)}><Share2 aria-hidden="true" />{t("research.shareGenerate")}</button></div> : <div className="space-research-footer">
         {(error || config.error || latest.error || preference.error || conversations.error) && <p role="alert">{error || spaceError(config.error || latest.error || preference.error || conversations.error)}</p>}
         {notice && <p role="status">{notice}</p>}
         <div className="research-input-card">
@@ -540,7 +541,7 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
           </div>
         </div>
         <p className="research-input-hint">{t("research.sendShortcut")}</p>
-      </div>
+      </div>}
     </section>
       {sessionsOpen && <>
         {!docked && <div className="research-sessions-scrim" aria-hidden="true" onClick={() => setSessionsOpen(false)} />}
@@ -571,9 +572,10 @@ export default function SpaceResearchPanel({ spaceId, spaceName, sourceCount, no
           <p className="space-research-hint">{t("research.historyHint")}</p>
         </aside>
       </>}
+    {sharePreview && shared.length > 0 && <ShareImageDialog title={spaceName} turns={shared} onClose={() => setSharePreview(false)} renderAnswer={(row) => {
+      const sources = sourceIndex(row.materials, row.external_sources);
+      const numbering = Object.fromEntries(citedSources(row.document, sources).map((item, index) => [item.citation, String(index + 1)]));
+      return renderChildren(row.document!.content, sources, numbering, `share-${row.job_id}`);
+    }} />}
   </dialog>, document.body);
-}
-
-function wasApplied(identity: string): boolean {
-  try { return localStorage.getItem(`siye-research-applied:${identity}`) === "1"; } catch { return false; }
 }

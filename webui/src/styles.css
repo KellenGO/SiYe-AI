@@ -862,15 +862,71 @@
 .space-research-dialog .research-sessions > .space-research-hint { margin-top: auto; padding-top: 10px; }
 
 /* 窄屏与分屏 */
-.space-research-dialog .research-reply-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.space-research-dialog .research-answer-action { display: inline-flex; align-items: center; gap: 5px; color: var(--sr-quiet); }
-.space-research-dialog .research-answer-action svg { width: 14px; height: 14px; }
+.space-research-dialog .research-reply-actions { display: flex; align-items: center; gap: 5px; margin-top: 12px; }
+.space-research-dialog .research-answer-action { width: 32px; height: 32px; color: var(--sr-faint); }
+.space-research-dialog .research-answer-action svg { width: 18px; height: 18px; }
+.space-research-dialog .research-regenerate { margin-left: auto; }
 .space-research-dialog .research-selection-ask { position: fixed; z-index: 20; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--sr-line); border-radius: 9px; background: var(--sr-paper); color: var(--sr-ink); box-shadow: 0 4px 18px #0002; cursor: pointer; }
 .space-research-dialog .research-selection-ask svg { width: 14px; height: 14px; }
+
+.space-research-dialog .research-share-selection-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 20px; border-bottom: 1px solid var(--sr-line); }
+.space-research-dialog .research-share-selection-head label { display: flex; align-items: center; gap: 9px; color: var(--sr-quiet); font-size: 12px; cursor: pointer; }
+.space-research-dialog input[type="checkbox"] { accent-color: var(--sr-accent); }
+.space-research-dialog .research-chat-turn.is-selecting { position: relative; padding: 12px 12px 12px 38px; border-radius: 12px; border: 1px solid transparent; }
+.space-research-dialog .research-chat-turn.is-selected { background: var(--sr-accent-wash); border-color: var(--sr-line-strong); }
+.space-research-dialog .research-share-turn-check { position: absolute; top: 20px; left: 12px; width: 17px; height: 17px; cursor: pointer; }
+.space-research-dialog .research-share-selection-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--sr-quiet); font-size: 12px; }
+.space-research-dialog .research-share-selection-footer button { display: inline-flex; align-items: center; gap: 6px; }
+.space-research-dialog .research-share-selection-footer svg { width: 14px; height: 14px; }
+.space-research-dialog .research-share-dialog { position: fixed; inset: 0; margin: auto; padding: 0; width: min(800px, calc(100vw - 32px)); height: min(900px, calc(100dvh - 40px)); max-width: none; max-height: none; border: 1px solid var(--sr-line-strong); border-radius: 16px; color: var(--sr-ink); background: var(--sr-panel); box-shadow: 0 24px 100px #0004; overflow: hidden; }
+.space-research-dialog .research-share-dialog[open] { display: flex; flex-direction: column; }
+.research-share-dialog::backdrop { background: #18203880; backdrop-filter: blur(3px); }
+.space-research-dialog .research-share-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--sr-line); flex: none; }
+.space-research-dialog .research-share-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.space-research-dialog .research-share-viewport { min-height: 0; flex: 1; overflow: auto; background: var(--sr-paper); padding: 16px; }
+.space-research-dialog .research-share-scaled { position: relative; margin: 0 auto; }
+.space-research-dialog .research-share-card { position: absolute; top: 0; left: 0; transform-origin: top left; box-sizing: border-box; width: 720px; padding: 40px 44px 28px; background: #fff; color: #202945; font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; font-size: 18px; line-height: 1.9; overflow-wrap: anywhere; }
+.space-research-dialog .research-share-card * { box-sizing: border-box; }
+.space-research-dialog .research-share-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; line-height: 1.4; }
+.space-research-dialog .research-share-brand strong { font-size: 22px; letter-spacing: 2px; }
+.space-research-dialog .research-share-brand > span:last-child { font-size: 13px; color: #7a8397; }
+.space-research-dialog .research-share-mark { display: flex; flex-wrap: wrap; width: 25px; height: 25px; gap: 3px; }
+.space-research-dialog .research-share-mark i { display: block; flex: none; width: 11px; height: 11px; border-radius: 5px 2px; background: #6672c7; }
+.space-research-dialog .research-share-mark i:nth-child(2), .space-research-dialog .research-share-mark i:nth-child(3) { background: #a5afdf; }
+.space-research-dialog .research-share-topic { color: #7a8397; font-size: 13px; margin-bottom: 28px; }
+.space-research-dialog .research-share-turn + .research-share-turn { margin-top: 34px; padding-top: 32px; border-top: 1px solid #e8eaf1; }
+.space-research-dialog .research-share-question { white-space: pre-wrap; padding: 16px 20px; margin-bottom: 24px; border-radius: 12px; background: #f2f4fa; font-size: 17px; font-weight: 500; }
+.space-research-dialog .research-share-answer { color: #202945; }
+.space-research-dialog .research-share-answer p { margin: 0 0 16px; }
+.space-research-dialog .research-share-answer h1, .space-research-dialog .research-share-answer h2, .space-research-dialog .research-share-answer h3 { color: #202945; margin: 24px 0 12px; font-size: 22px; font-weight: 650; line-height: 1.5; }
+.space-research-dialog .research-share-answer h1 { font-size: 26px; }
+.space-research-dialog .research-share-answer h3 { font-size: 20px; }
+.space-research-dialog .research-share-answer ul, .space-research-dialog .research-share-answer ol { margin: 12px 0 20px; padding-left: 28px; }
+.space-research-dialog .research-share-answer li { margin: 8px 0; padding-left: 3px; }
+.space-research-dialog .research-share-answer li p { margin-bottom: 8px; }
+.space-research-dialog .research-share-answer a { color: #4e5bd2; text-decoration: none; }
+.space-research-dialog .research-share-answer sup { font-size: 11px; padding: 1px 4px; border-radius: 4px; background: #f0f2ff; }
+.space-research-dialog .research-share-sources { margin-top: 26px; padding: 16px 18px; border: 1px solid #e8eaf1; border-radius: 12px; }
+.space-research-dialog .research-share-sources h3 { margin: 0 0 12px; font-size: 12px; font-weight: 500; color: #7a8397; }
+.space-research-dialog .research-share-source { display: flex; align-items: flex-start; gap: 10px; margin-top: 10px; }
+.space-research-dialog .research-share-source > b { color: #6672c7; font-size: 12px; font-weight: 500; width: 16px; flex: none; }
+.space-research-dialog .research-share-source > div { min-width: 0; }
+.space-research-dialog .research-share-source strong { display: block; color: #606b80; font-size: 12px; font-weight: 500; line-height: 1.6; }
+.space-research-dialog .research-share-source span { display: block; color: #7a8397; font-size: 10px; line-height: 1.6; word-break: break-all; }
+.space-research-dialog .research-share-signature { margin-top: 32px; padding-top: 18px; border-top: 1px solid #e8eaf1; color: #939bad; font-size: 11px; text-align: center; }
+.space-research-dialog .research-share-footer { flex: none; padding: 12px 20px 16px; border-top: 1px solid var(--sr-line); font-size: 12px; }
+.space-research-dialog .research-share-question-toggle { display: flex; align-items: center; gap: 8px; color: var(--sr-quiet); cursor: pointer; }
+.space-research-dialog .research-share-footer p { margin: 8px 0 0; color: var(--sr-quiet); }
+.space-research-dialog .research-share-footer p[role="alert"] { color: var(--sr-danger); }
+.space-research-dialog .research-share-dialog-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.space-research-dialog .research-share-dialog-actions button { display: inline-flex; align-items: center; gap: 6px; }
+.space-research-dialog .research-share-dialog-actions svg { width: 14px; height: 14px; }
 
 @media (max-width: 720px) {
   .space-research-dialog { border-left: 0; }
   .space-research-dialog .space-research-body { padding: 18px 16px 4px; }
   .space-research-dialog .space-research-footer { padding: 10px 14px 12px; }
   .space-research-dialog .research-sessions.is-overlay { width: min(86vw, 300px); }
+  .space-research-dialog .research-share-dialog { width: calc(100vw - 16px); height: calc(100dvh - 24px); border-radius: 12px; }
+  .space-research-dialog .research-share-head, .space-research-dialog .research-share-footer { padding-left: 14px; padding-right: 14px; }
 }
